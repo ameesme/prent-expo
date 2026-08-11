@@ -21,6 +21,54 @@ ships, so no development build is needed.
 > `api.expo.dev`. Where that host is unreachable, take versions from
 > `node_modules/expo/bundledNativeModules.json` instead and install them with plain `npm install`.
 
+## iOS preview build
+
+`eas.json` is committed, so an installable iOS build is one command. **EAS Build does not need a
+Mac** — Expo runs the macOS workers, so these work from any OS.
+
+| Route | Apple Developer account | Mac | Result |
+| --- | --- | --- | --- |
+| Expo Go | no | no | runs now, real camera + gallery |
+| `preview:simulator` | **no** | yes, for the Simulator | `.tar.gz` app to drop on an iOS Simulator |
+| `preview` | yes, paid | no | ad-hoc install link/QR for registered iPhones |
+| `production` + `eas submit` | yes, paid | no | TestFlight, for wider testers |
+
+```bash
+# fastest — no build, no account, real camera and gallery
+npx expo start                                       # scan the QR with Expo Go
+
+# a real native build with no Apple account (opens in the iOS Simulator)
+npx eas-cli login
+npx eas-cli init                                     # once: writes extra.eas.projectId to app.json
+npx eas-cli build -p ios --profile preview:simulator
+
+# installable on real iPhones (needs a paid Apple Developer account)
+npx eas-cli device:create                            # once: register the test devices
+npx eas-cli build -p ios --profile preview
+```
+
+Run `eas-cli init` (or one interactive build) before anything else: it creates the EAS project and
+writes `extra.eas.projectId` into `app.json`, which needs committing. Signing credentials for the
+device profiles are also created by the first interactive run and then reused.
+
+Nothing else needs configuring — `app.json` already carries `ios.bundleIdentifier`
+(`me.amees.prent`) and the camera / photo-library permission strings that a native build needs
+(Expo Go supplies its own).
+
+### Building from CI
+
+`.github/workflows/ios-preview.yml` queues the same build from GitHub Actions — run it from the
+Actions tab and pick a profile (defaults to `preview:simulator`, the one that needs no Apple
+account). It requires an **`EXPO_TOKEN`** repository secret, from
+<https://expo.dev/settings/access-tokens>. The workflow checks both that secret and the project id
+before it starts, so a missing one fails immediately with an explanation instead of hanging on a
+prompt. It is manual-dispatch only, since every run spends an EAS build credit.
+
+> These commands were authored but could not be executed end to end from the sandbox this project
+> was built in: `api.expo.dev` is unreachable there, and iOS builds need macOS regardless.
+> `eas.json` itself is schema-validated against `@expo/eas-json`, and the workflow's profile names
+> are cross-checked against it.
+
 ## What it does
 
 | Screen | How to get there |
