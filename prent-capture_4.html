@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Prent — Swipe to capture</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600&family=Caveat:wght@400;600&display=swap');
+
+  :root{
+    --ink:#0a0a0a;
+    --paper:#ffffff;
+    --dim:#8a8a8a;
+    --hint:#b4b0a8;
+    --env:#0a0a0a;
+    --stage:#c9c6bf;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{
+    background:#3a3936;
+    font-family:'Inter',sans-serif;
+    display:flex;align-items:center;justify-content:center;
+    min-height:100dvh;overflow:hidden;
+  }
+
+  /* ---- phone mockup ---- */
+  .phone{
+    position:relative;
+    width:390px;height:844px;
+    max-height:96dvh;
+    aspect-ratio:390/844;
+    background:#0d0d0f;
+    border-radius:54px;
+    padding:12px;
+    box-shadow:
+      0 0 0 2px #3a3a40,
+      0 0 0 11px #17171a,
+      0 0 0 12px #35353b,
+      0 40px 90px rgba(0,0,0,.55);
+    transition:width .5s cubic-bezier(.3,.7,.25,1), height .5s cubic-bezier(.3,.7,.25,1);
+  }
+  /* device stage holds the phone + the external rotate button */
+  .device-stage{
+    position:relative;
+    display:flex;align-items:center;justify-content:center;
+  }
+
+  /* ===== landscape: the real device turns 90° (notch, buttons and all) ===== */
+  /* the phone shell rotates left; the screen content counter-rotates to stay upright */
+  .phone{transition:transform .55s cubic-bezier(.3,.7,.25,1);}
+  body.landscape .phone{
+    transform:rotate(-90deg) scale(var(--land-scale,.86));
+  }
+  .screen-inner{
+    position:relative;width:100%;height:100%;
+    display:flex;flex-direction:column;
+    transition:transform .55s cubic-bezier(.3,.7,.25,1);
+  }
+  /* counter-rotate content and swap the box to landscape dimensions */
+  body.landscape .screen-inner{
+    width:844px;height:390px;                 /* landscape footprint */
+    transform:rotate(90deg) translate(0, 0);
+    transform-origin:top left;
+    position:absolute;top:0;left:390px;        /* pivot so it lands back over the screen */
+  }
+
+  /* ---- landscape UI reflow (content is upright; box is 844x390) ---- */
+  /* envelope becomes a slim bar; card + metadata on the left, controls on the right */
+  body.landscape .envelope{height:60px;padding-top:7px;border-radius:0 0 22px 22px;}
+  body.landscape .notch{width:96px;height:20px;}
+  body.landscape .title{margin-top:3px;font-size:12px;}
+  body.landscape .slot-label{bottom:6px;font-size:8px;}
+  body.landscape .envelope.dragging{height:66px;}
+  body.landscape .envelope.near{height:82px;}
+  body.landscape .envelope.armed{height:100px;}
+
+  /* card sits in the left/centre, wide viewfinder, clear of the right controls */
+  body.landscape .deck{top:66px;height:230px;left:0;right:96px;}
+  body.landscape .card{width:410px;}
+  body.landscape .card-face{padding:11px 13px 9px;border-radius:16px;}
+  body.landscape .card .frame{aspect-ratio:var(--vf-land, 16/9);border-radius:11px;}
+  body.landscape .meta{padding:8px 4px 4px;}
+  body.landscape .meta .mroll{font-size:13px;}
+  body.landscape .meta .mline{margin-top:5px;font-size:10.5px;}
+  body.landscape .flip-hint{margin-top:6px;padding-top:6px;font-size:10px;}
+
+  /* controls become a vertical column on the right edge */
+  body.landscape .controls{
+    top:50%;bottom:auto;left:auto;right:20px;transform:translateY(-50%);
+    flex-direction:column;gap:14px;width:auto;
+  }
+  body.landscape .cbtn{width:48px;height:48px;}
+  body.landscape .cbtn svg{width:21px;height:21px;}
+
+  body.landscape .msg-area textarea{min-height:80px;font-size:18px;line-height:27px;}
+
+  /* external rotate button, sits beside/below the phone, never inside it */
+  .rotate-fab{
+    position:absolute;bottom:-6px;left:50%;transform:translateX(-50%) translateY(100%);
+    display:flex;align-items:center;gap:9px;
+    background:#fff;color:#1a1a1a;border:none;
+    padding:11px 18px;border-radius:30px;cursor:pointer;
+    box-shadow:0 10px 26px rgba(0,0,0,.3);
+    font-family:'Space Mono',monospace;font-size:12px;letter-spacing:.5px;
+    -webkit-tap-highlight-color:transparent;
+    transition:transform .15s ease;
+  }
+  .rotate-fab:active{transform:translateX(-50%) translateY(100%) scale(.95);}
+  .rotate-fab svg{width:20px;height:20px;transition:transform .4s ease;}
+  body.landscape .rotate-fab svg{transform:rotate(-90deg);}
+
+  .phone::after{ /* side buttons */
+    content:"";position:absolute;left:-3px;top:170px;width:3px;height:34px;
+    background:#26262b;border-radius:2px 0 0 2px;
+    box-shadow:0 46px 0 #26262b,0 96px 0 #26262b;
+  }
+  .screen{
+    position:relative;width:100%;height:100%;
+    background:var(--paper);
+    border-radius:44px;overflow:hidden;
+    display:flex;flex-direction:column;
+  }
+
+  /* ---- top bar / the envelope mouth ---- */
+  .envelope{
+    position:relative;
+    height:150px;flex:none;
+    background:var(--env);
+    border-radius:0 0 30px 30px;
+    display:flex;flex-direction:column;align-items:center;
+    justify-content:flex-start;
+    padding-top:14px;
+    z-index:5;
+    transition:background .25s ease, height .4s cubic-bezier(.25,.6,.3,1);
+  }
+  .notch{
+    width:118px;height:26px;background:#000;border-radius:0 0 16px 16px;
+    display:flex;align-items:center;justify-content:center;gap:7px;
+    position:relative;z-index:3;
+  }
+  .notch .cam{width:8px;height:8px;border-radius:50%;background:#1b1b24;box-shadow:inset 0 0 0 2px #2b2b38;}
+  .title{
+    color:#fff;font-family:'Space Mono',monospace;font-size:14px;letter-spacing:.5px;
+    margin-top:16px;font-weight:400;opacity:.92;
+    position:relative;z-index:6;
+    transition:opacity .25s;
+    background:none;border:none;cursor:pointer;
+    display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:20px;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .title:active{background:rgba(255,255,255,.08);}
+  .title .chev{width:13px;height:13px;opacity:.65;transition:transform .3s ease;}
+  .title.open .chev{transform:rotate(180deg);}
+  .slot-label{
+    position:absolute;bottom:12px;left:0;right:0;text-align:center;
+    color:rgba(255,255,255,.35);font-family:'Space Mono',monospace;
+    font-size:10px;letter-spacing:2px;text-transform:uppercase;
+    transition:opacity .2s,color .2s;pointer-events:none;z-index:3;
+  }
+
+  /* the opening flap — a triangular mouth that peels down from the envelope */
+  .flap{
+    position:absolute;left:50%;bottom:-1px;
+    width:220px;height:0;
+    transform:translateX(-50%);
+    z-index:2;pointer-events:none;
+    transition:height .3s cubic-bezier(.2,.9,.25,1),opacity .25s;
+    opacity:0;
+  }
+  .flap svg{width:100%;height:100%;display:block;}
+  .flap .lip{fill:#000;}
+  .flap .inside{fill:#151515;}
+
+  /* progressive open states driven by the drag */
+  /* as soon as a drag starts, the envelope flap peels open subtly to receive the card */
+  .envelope.dragging { height:158px; }
+  .envelope.dragging .flap{opacity:1;height:24px;}
+  .envelope.near  { height:170px; }
+  .envelope.near  .flap{opacity:1;height:36px;}
+  .envelope.near  .title{opacity:.6;}
+  .envelope.armed { background:#000; height:184px; }
+  .envelope.armed .flap{opacity:1;height:54px;}
+  .envelope.armed .title{opacity:0;}
+  .envelope.armed .slot-label{color:rgba(255,255,255,.9);}
+
+  /* ---- capture stage ---- */
+  .stage{
+    position:relative;flex:1;
+    background:var(--paper);
+    overflow:hidden;
+  }
+
+  /* ---- card stack ---- */
+  /* anchored to the screen, not the stage, so top-bar motion never shifts cards */
+  .deck{
+    position:absolute;left:0;right:0;top:210px;height:520px;
+    display:flex;align-items:center;justify-content:center;
+    z-index:4;
+  }
+  .card{
+    position:absolute;
+    top:50%;left:50%;
+    width:330px;
+    transform:translate(-50%,-50%);
+    touch-action:none;
+    will-change:transform;
+    user-select:none;
+    perspective:1400px;               /* enables 3D flip of the inner */
+  }
+  .card-inner{
+    position:relative;width:100%;
+    transform-style:preserve-3d;
+    transition:transform .55s cubic-bezier(.3,.7,.25,1);
+  }
+  .card.flipped .card-inner{transform:rotateY(180deg);}
+  .card-face{
+    background:var(--paper);
+    border-radius:24px;
+    padding:18px 18px 15px;
+    box-shadow:0 14px 34px rgba(0,0,0,.16),0 2px 8px rgba(0,0,0,.08);
+    backface-visibility:hidden;
+    -webkit-backface-visibility:hidden;
+  }
+  .card-face.back{
+    position:absolute;inset:0;
+    transform:rotateY(180deg);
+    display:flex;flex-direction:column;
+  }
+  .card .frame{
+    position:relative;
+    width:100%;aspect-ratio:var(--vf, 3/3.8);
+    border-radius:14px;overflow:hidden;
+    background:#111;
+  }
+  .card .frame img{
+    width:100%;height:100%;object-fit:cover;display:block;
+    pointer-events:none;
+  }
+  /* the live viewfinder video (only on the top card) */
+  .card .frame video{
+    position:absolute;inset:0;
+    width:100%;height:100%;object-fit:cover;display:block;
+    background:#111;
+  }
+  .card .frame video.front{transform:scaleX(-1);}   /* mirror selfie */
+  /* viewfinder overlay: corner brackets + subtle grid */
+  .card .frame .vf{
+    position:absolute;inset:0;pointer-events:none;z-index:2;
+  }
+  .card .frame .vf .corner{
+    position:absolute;width:20px;height:20px;
+    border:2px solid rgba(255,255,255,.75);
+  }
+  .card .frame .vf .tl{top:10px;left:10px;border-right:none;border-bottom:none;border-radius:4px 0 0 0;}
+  .card .frame .vf .tr{top:10px;right:10px;border-left:none;border-bottom:none;border-radius:0 4px 0 0;}
+  .card .frame .vf .bl{bottom:10px;left:10px;border-right:none;border-top:none;border-radius:0 0 0 4px;}
+  .card .frame .vf .br{bottom:10px;right:10px;border-left:none;border-top:none;border-radius:0 0 4px 0;}
+  .card .frame .vf .dot{
+    position:absolute;top:50%;left:50%;width:34px;height:34px;
+    transform:translate(-50%,-50%);
+    border:1px solid rgba(255,255,255,.5);border-radius:50%;
+  }
+  .card .frame .vf .dot::after{
+    content:"";position:absolute;top:50%;left:50%;width:3px;height:3px;
+    transform:translate(-50%,-50%);background:rgba(255,255,255,.8);border-radius:50%;
+  }
+  .card .frame .rec{
+    position:absolute;top:11px;left:50%;transform:translateX(-50%);
+    display:flex;align-items:center;gap:5px;z-index:3;
+    font-family:'Space Mono',monospace;font-size:9px;letter-spacing:1px;
+    color:rgba(255,255,255,.9);
+    background:rgba(0,0,0,.32);padding:3px 9px;border-radius:20px;
+    backdrop-filter:blur(2px);white-space:nowrap;
+  }
+  .card .frame .rec .live-dot{
+    width:6px;height:6px;border-radius:50%;background:#e0533b;
+    animation:blink 1.4s ease-in-out infinite;
+  }
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+
+  /* front metadata block */
+  .meta{
+    padding:13px 4px 8px;
+  }
+  .meta .row1{
+    display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  }
+  .meta .mroll{
+    font-family:'Space Mono',monospace;font-size:15px;color:var(--ink);
+    letter-spacing:.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .count{font-family:'Space Mono',monospace;font-size:14px;color:var(--dim);letter-spacing:1px;flex:none;}
+  .meta .mline{
+    display:flex;align-items:center;gap:16px;margin-top:9px;
+    font-size:11.5px;color:var(--dim);
+  }
+  .meta .mitem{display:flex;align-items:center;gap:6px;}
+  .meta .mline svg{width:12px;height:12px;flex:none;opacity:.55;}
+  .flip-hint{
+    display:flex;align-items:center;justify-content:center;gap:6px;
+    margin-top:11px;padding-top:10px;border-top:1px solid #f0efec;
+    font-size:11px;color:var(--hint);letter-spacing:.3px;
+  }
+  .flip-hint svg{width:13px;height:13px;opacity:.7;}
+  .flip-hint.bk{cursor:pointer;-webkit-tap-highlight-color:transparent;}
+  .flip-hint.bk:active{color:var(--dim);}
+
+  /* ---- card back (message written on the print) ---- */
+  .card-face.back .back-head{
+    display:flex;align-items:center;justify-content:space-between;
+    font-family:'Space Mono',monospace;font-size:11px;letter-spacing:1px;
+    text-transform:uppercase;color:var(--hint);margin-bottom:12px;
+  }
+  .card-face.back .back-head .qr-tag{
+    width:30px;height:30px;border-radius:4px;border:1px dashed #d8d5cd;
+    display:flex;align-items:center;justify-content:center;
+    font-size:8px;color:#c3bfb6;letter-spacing:1px;
+  }
+  .msg-area{
+    flex:1;position:relative;
+    border-radius:14px;
+    background:
+      repeating-linear-gradient(transparent,transparent 33px,#efece5 33px,#efece5 34px);
+    background-position:0 8px;
+    padding:8px 4px;
+  }
+  .msg-area textarea{
+    width:100%;height:100%;min-height:130px;
+    border:none;outline:none;resize:none;background:transparent;
+    font-family:'Caveat','Space Mono',cursive;
+    font-size:22px;line-height:34px;color:#2a2a2a;
+    letter-spacing:.3px;
+  }
+  .msg-area textarea::placeholder{color:#c7c3ba;}
+  .back-foot{
+    margin-top:10px;
+    font-family:'Space Mono',monospace;font-size:10px;letter-spacing:.5px;color:var(--hint);
+  }
+
+  /* ---- circular camera controls below the stack ---- */
+  .controls{
+    position:absolute;left:0;right:0;top:748px;
+    display:flex;align-items:center;justify-content:center;gap:22px;
+    z-index:6;
+    transition:opacity .4s ease;
+  }
+  .cbtn.ghost{background:#f6f6f4;border-color:#ececec;color:#555;}
+  .cbtn{
+    width:52px;height:52px;border-radius:50%;
+    background:#fff;border:1px solid #ececec;
+    box-shadow:0 6px 16px rgba(0,0,0,.1);
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;color:#1a1a1a;
+    transition:transform .15s ease, background .2s ease, color .2s ease;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .cbtn:active{transform:scale(.9);}
+  .cbtn svg{width:24px;height:24px;}
+  .cbtn.on{background:#1a1a1a;color:#fff;border-color:#1a1a1a;}
+  .cbtn .lbl{display:none;}
+
+  /* ---- capture flash ---- */
+  .flash{
+    position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:20;
+  }
+  .flash.go{animation:flash .32s ease-out;}
+  .flash.strong.go{animation:flashStrong .4s ease-out;}
+  @keyframes flash{0%{opacity:0}12%{opacity:.9}100%{opacity:0}}
+  @keyframes flashStrong{0%{opacity:0}8%{opacity:1}55%{opacity:.85}100%{opacity:0}}
+
+  /* ---- end sequence: envelope drops in from the top onto white ---- */
+  .develop{
+    position:absolute;inset:0;z-index:28;
+    background:var(--paper);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:34px;
+    opacity:0;pointer-events:none;
+    transition:opacity .45s ease;
+  }
+  .develop.show{opacity:1;pointer-events:auto;}
+
+  /* the sealed envelope, slides down from above the screen */
+  .env-wrap{
+    position:relative;width:260px;height:172px;
+    transform:translateY(-140vh);
+  }
+  .develop.show .env-wrap{
+    animation:envDrop 1.1s cubic-bezier(.34,1.2,.4,1) .15s forwards;
+  }
+  @keyframes envDrop{
+    0%{transform:translateY(-140vh) rotate(-3deg);}
+    70%{transform:translateY(8px) rotate(.5deg);}
+    100%{transform:translateY(0) rotate(0);}
+  }
+
+  .env-body{
+    position:relative;width:100%;height:100%;
+    background:#111;
+    border-radius:10px;
+    box-shadow:0 26px 50px rgba(0,0,0,.28);
+    overflow:hidden;
+  }
+  /* the closed flap: a shallow V seam across the top half */
+  .env-body .flapline{
+    position:absolute;top:0;left:0;width:0;height:0;
+    border-left:130px solid transparent;
+    border-right:130px solid transparent;
+    border-top:84px solid #191919;
+    z-index:2;
+  }
+  .env-body .flapline::after{
+    content:"";position:absolute;left:-130px;top:-84px;
+    border-left:130px solid transparent;
+    border-right:130px solid transparent;
+    border-top:84px solid transparent;
+    box-shadow:0 1px 0 rgba(255,255,255,.05);
+  }
+  .env-stamp{
+    position:absolute;bottom:16px;right:18px;z-index:3;
+    font-family:'Space Mono',monospace;font-size:10px;letter-spacing:3px;
+    color:rgba(255,255,255,.5);text-transform:uppercase;
+  }
+  /* small wax-seal dot where the flap meets */
+  .env-seal{
+    position:absolute;top:64px;left:50%;transform:translateX(-50%);
+    width:26px;height:26px;border-radius:50%;
+    background:#d8663f;z-index:4;
+    display:flex;align-items:center;justify-content:center;
+    font-size:11px;color:rgba(255,255,255,.85);
+    box-shadow:0 3px 8px rgba(0,0,0,.3);
+    opacity:0;
+  }
+  .develop.show .env-seal{animation:sealPop .4s ease 1.1s forwards;}
+  @keyframes sealPop{0%{opacity:0;transform:translateX(-50%) scale(.4);}100%{opacity:1;transform:translateX(-50%) scale(1);}}
+
+  .develop .status{
+    text-align:center;
+    font-family:'Space Mono',monospace;font-size:13px;letter-spacing:2px;
+    color:var(--dim);text-transform:uppercase;
+    opacity:0;
+  }
+  .develop.show .status{animation:statusFade .5s ease 1.25s forwards;}
+  @keyframes statusFade{to{opacity:1;}}
+  .develop .status .dots::after{
+    content:"";animation:dots 1.4s steps(4,end) infinite;
+  }
+  @keyframes dots{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+
+  /* ---- roll complete ---- */
+  .done{
+    position:absolute;inset:0;z-index:30;
+    background:var(--paper);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:20px;text-align:center;padding:40px;
+    opacity:0;pointer-events:none;transition:opacity .5s ease;
+  }
+  .done.show{opacity:1;pointer-events:auto;}
+  .done .seal{
+    width:74px;height:74px;border-radius:50%;
+    background:var(--ink);color:#fff;
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Space Mono',monospace;font-size:22px;
+  }
+  .done h2{font-family:'Space Mono',monospace;font-weight:400;font-size:19px;color:var(--ink);letter-spacing:.5px;}
+  .done p{color:var(--dim);font-size:14px;line-height:1.5;max-width:230px;}
+  .again{
+    margin-top:6px;font-family:'Space Mono',monospace;font-size:13px;letter-spacing:1px;
+    background:none;border:1px solid #ddd;color:var(--ink);
+    padding:11px 20px;border-radius:30px;cursor:pointer;
+  }
+  .again:active{background:#f2f2f2;}
+
+  /* ---- bottom hint ---- */
+  .foot{
+    position:absolute;bottom:26px;left:0;right:0;text-align:center;
+    color:var(--hint);font-size:12px;letter-spacing:.4px;
+    display:flex;flex-direction:column;align-items:center;gap:8px;
+    pointer-events:none;
+  }
+  .arrow{width:18px;height:18px;opacity:.5;animation:bob 1.8s ease-in-out infinite;}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+
+  /* ===== roll info panel (drops from the envelope) ===== */
+  .rollinfo{
+    position:absolute;inset:0;z-index:30;
+    pointer-events:none;
+  }
+  .ri-scrim{
+    position:absolute;inset:0;background:rgba(0,0,0,.35);
+    opacity:0;transition:opacity .3s ease;
+  }
+  .rollinfo.show{pointer-events:auto;}
+  .rollinfo.show .ri-scrim{opacity:1;}
+
+  .ri-sheet{
+    position:absolute;top:0;left:0;right:0;
+    background:#111;color:#fff;
+    border-radius:0 0 28px 28px;
+    padding:150px 22px 26px;         /* top padding clears the envelope bar */
+    transform:translateY(-100%);
+    transition:transform .4s cubic-bezier(.25,.7,.3,1);
+    box-shadow:0 24px 50px rgba(0,0,0,.4);
+  }
+  .rollinfo.show .ri-sheet{transform:translateY(0);}
+  .ri-grab{
+    position:absolute;bottom:12px;left:50%;transform:translateX(-50%);
+    width:38px;height:4px;border-radius:3px;background:rgba(255,255,255,.25);
+  }
+
+  .ri-top{display:flex;gap:16px;align-items:center;margin-bottom:16px;}
+  .ri-fmtwrap{flex:none;width:96px;display:flex;align-items:center;justify-content:center;}
+  /* product format preview reuses the overview format shapes, on dark */
+  .ri-fmt{position:relative;display:flex;align-items:center;justify-content:center;}
+  .ri-fmt .obj{
+    background:#fff;border-radius:4px;overflow:hidden;position:relative;
+    box-shadow:0 6px 16px rgba(0,0,0,.4);
+  }
+  .ri-fmt .obj img{width:100%;height:100%;object-fit:cover;display:block;}
+  .ri-fmt.prints   .obj{width:74px;height:90px;padding:5px 5px 16px;}
+  .ri-fmt.prints   .obj img{height:65px;border-radius:2px;}
+  .ri-fmt.prints::after{content:"";position:absolute;top:6px;left:9px;width:72px;height:88px;background:#f2f0ec;border-radius:4px;transform:rotate(-6deg);z-index:-1;}
+  .ri-fmt.photobook .obj{width:96px;height:74px;border-radius:3px 5px 5px 3px;padding:0;}
+  .ri-fmt.photobook .obj::before{content:"";position:absolute;left:0;top:0;bottom:0;width:7px;background:linear-gradient(90deg,#00000033,#00000000);z-index:2;}
+  .ri-fmt.square   .obj{width:82px;height:82px;padding:5px 5px 16px;}
+  .ri-fmt.square   .obj img{height:56px;border-radius:2px;}
+  .ri-fmt.poster   .obj{width:64px;height:92px;padding:4px;}
+  .ri-fmt.strip    .obj{width:44px;height:100px;padding:4px;display:flex;flex-direction:column;gap:3px;}
+  .ri-fmt.strip    .obj img{height:22px;border-radius:1px;}
+
+  .ri-meta{flex:1;min-width:0;}
+  .ri-name{font-family:'Space Mono',monospace;font-size:18px;letter-spacing:.2px;}
+  .ri-product{
+    display:inline-block;margin-top:7px;
+    font-size:11px;letter-spacing:.6px;text-transform:uppercase;
+    color:#111;background:#fff;padding:3px 10px;border-radius:20px;
+  }
+  .ri-count{margin-top:9px;font-family:'Space Mono',monospace;font-size:12px;color:rgba(255,255,255,.55);}
+  .ri-desc{font-size:13px;line-height:1.5;color:rgba(255,255,255,.72);margin-bottom:20px;}
+
+  .ri-slots-label{
+    font-family:'Space Mono',monospace;font-size:10px;letter-spacing:2px;
+    text-transform:uppercase;color:rgba(255,255,255,.4);margin-bottom:11px;
+  }
+  .ri-slots{
+    display:grid;grid-template-columns:repeat(6,1fr);gap:8px;
+  }
+  .ri-slot{
+    aspect-ratio:1;border-radius:6px;overflow:hidden;position:relative;
+    background:rgba(255,255,255,.06);
+    border:1px solid rgba(255,255,255,.1);
+  }
+  .ri-slot img{width:100%;height:100%;object-fit:cover;display:block;}
+  .ri-slot.empty{
+    display:flex;align-items:center;justify-content:center;
+    border-style:dashed;
+  }
+  .ri-slot.empty::after{
+    content:"";width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.2);
+  }
+  .ri-slot .num{
+    position:absolute;bottom:3px;right:4px;
+    font-family:'Space Mono',monospace;font-size:8px;color:rgba(255,255,255,.6);
+  }
+  /* ===== rolls overview ===== */
+  .overview{
+    position:absolute;inset:0;z-index:40;
+    background:var(--paper);
+    display:flex;flex-direction:column;
+    transform:translateX(-100%);
+    transition:transform .38s cubic-bezier(.3,.7,.3,1);
+    overflow-y:auto;
+  }
+  .overview.show{transform:translateX(0);}
+
+  .ov-head{
+    padding:26px 24px 14px;flex:none;
+    position:sticky;top:0;background:var(--paper);z-index:2;
+    display:flex;align-items:flex-end;justify-content:space-between;
+  }
+  .ov-title{font-family:'Space Mono',monospace;font-size:22px;color:var(--ink);letter-spacing:.3px;}
+  .ov-sub{font-size:12px;color:var(--dim);margin-top:3px;}
+  .ov-close{
+    width:34px;height:34px;border-radius:50%;border:1px solid #eee;background:#fff;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;color:#333;flex:none;
+  }
+  .ov-close svg{width:17px;height:17px;}
+
+  .ov-list{
+    padding:8px 20px 30px;
+    display:flex;flex-direction:column;gap:16px;
+  }
+
+  /* a roll row: format preview + info */
+  .roll{
+    display:flex;gap:16px;align-items:center;
+    padding:16px;border-radius:20px;
+    background:#faf9f7;border:1px solid #f0efec;
+    cursor:pointer;
+    transition:transform .15s ease, box-shadow .2s ease;
+  }
+  .roll:active{transform:scale(.98);}
+  .roll.open-target{box-shadow:0 10px 26px rgba(0,0,0,.1);}
+
+  /* the format preview: a mini physical product whose shape = end product */
+  .fmt{
+    flex:none;position:relative;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .fmt .obj{
+    background:#fff;border-radius:4px;
+    box-shadow:0 4px 12px rgba(0,0,0,.14);
+    overflow:hidden;position:relative;
+    border:1px solid rgba(0,0,0,.05);
+  }
+  .fmt .obj img{width:100%;height:100%;object-fit:cover;display:block;}
+
+  /* format shapes — each hints at the physical end product */
+  .fmt.prints   .obj{width:72px;height:88px;padding:5px 5px 16px;background:#fff;}
+  .fmt.prints   .obj img{border-radius:2px;height:63px;}
+  .fmt.prints::after{ /* a second print peeking behind */
+    content:"";position:absolute;top:6px;left:8px;width:70px;height:86px;
+    background:#fff;border-radius:4px;box-shadow:0 3px 8px rgba(0,0,0,.1);
+    transform:rotate(-6deg);z-index:-1;
+  }
+  .fmt.photobook .obj{width:96px;height:74px;padding:0;border-radius:3px 5px 5px 3px;}
+  .fmt.photobook .obj::before{ /* spine */
+    content:"";position:absolute;left:0;top:0;bottom:0;width:7px;
+    background:linear-gradient(90deg,#00000022,#00000000);z-index:2;
+  }
+  .fmt.photobook .obj img{height:100%;}
+  .fmt.square   .obj{width:80px;height:80px;padding:5px 5px 16px;}
+  .fmt.square   .obj img{border-radius:2px;height:54px;}
+  .fmt.poster   .obj{width:64px;height:92px;padding:4px;}
+  .fmt.poster   .obj img{height:100%;border-radius:1px;}
+  .fmt.strip    .obj{width:44px;height:100px;padding:4px;display:flex;flex-direction:column;gap:3px;}
+  .fmt.strip    .obj img{height:22px;border-radius:1px;}
+
+  .roll-info{flex:1;min-width:0;}
+  .roll-name{font-family:'Space Mono',monospace;font-size:16px;color:var(--ink);letter-spacing:.2px;}
+  .roll-product{
+    display:inline-block;margin-top:5px;
+    font-size:11px;letter-spacing:.6px;text-transform:uppercase;
+    color:#fff;background:var(--ink);padding:3px 9px;border-radius:20px;
+  }
+  .roll-desc{font-size:12.5px;color:var(--dim);line-height:1.45;margin-top:8px;}
+  .roll-meta{
+    display:flex;align-items:center;gap:12px;margin-top:9px;
+    font-family:'Space Mono',monospace;font-size:11px;color:#9a978f;
+  }
+  .roll-meta .prog{
+    flex:1;height:4px;border-radius:3px;background:#eae8e3;overflow:hidden;max-width:120px;
+  }
+  .roll-meta .prog span{display:block;height:100%;background:var(--ink);border-radius:3px;}
+  .roll-arrow{flex:none;color:#c3c0b8;}
+  .roll-arrow svg{width:20px;height:20px;}
+
+  .ov-new{
+    margin:2px 20px 30px;
+    display:flex;align-items:center;justify-content:center;gap:8px;
+    padding:15px;border-radius:18px;
+    border:1.5px dashed #d8d5cd;color:#8a877f;
+    font-family:'Space Mono',monospace;font-size:13px;letter-spacing:.5px;
+    cursor:pointer;background:#fff;
+  }
+  .ov-new:active{background:#faf9f7;}
+</style>
+</head>
+<body>
+  <div class="device-stage" id="deviceStage">
+    <div class="phone">
+      <div class="screen">
+        <div class="screen-inner" id="screenInner">
+      <div class="envelope" id="env">
+        <div class="notch"><span class="cam"></span></div>
+        <button class="title" id="titleBtn">
+          <span class="tt">Julia's vakantie</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="flap" id="flap">
+          <svg viewBox="0 0 220 60" preserveAspectRatio="none">
+            <path class="inside" d="M0 0 H220 V14 L110 60 L0 14 Z"/>
+            <path class="lip" d="M0 0 L110 44 L220 0 L220 8 L110 52 L0 8 Z"/>
+          </svg>
+        </div>
+        <div class="slot-label" id="slot">pull a card up</div>
+      </div>
+
+      <!-- roll info panel: drops down when the envelope title is tapped -->
+      <div class="rollinfo" id="rollinfo">
+        <div class="ri-scrim" id="riScrim"></div>
+        <div class="ri-sheet" id="riSheet">
+          <div class="ri-grab"></div>
+          <div class="ri-top">
+            <div class="ri-fmtwrap"><div class="ri-fmt" id="riFmt"></div></div>
+            <div class="ri-meta">
+              <div class="ri-name" id="riName"></div>
+              <span class="ri-product" id="riProduct"></span>
+              <div class="ri-count" id="riCount"></div>
+            </div>
+          </div>
+          <div class="ri-desc" id="riDesc"></div>
+          <div class="ri-slots-label">Frames in this roll</div>
+          <div class="ri-slots" id="riSlots"></div>
+        </div>
+      </div>
+
+      <div class="stage">
+        <div class="flash" id="flash"></div>
+      </div>
+
+      <div class="deck" id="deck"></div>
+
+      <div class="controls" id="controls">
+        <div class="cbtn ghost" id="rollsBtn" title="All rolls">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="14" height="17" rx="2"/>
+            <path d="M17 7h3a1 1 0 0 1 1 1v11a2 2 0 0 1-2 2h-9"/>
+          </svg>
+        </div>
+        <div class="cbtn" id="flipBtn" title="Flip camera">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 5c3.9 0 7 3.1 7 7"/><path d="M12 19c-3.9 0-7-3.1-7-7"/>
+            <path d="M19 3v4h-4"/><path d="M5 21v-4h4"/>
+            <circle cx="12" cy="12" r="2.4"/>
+          </svg>
+        </div>
+        <div class="cbtn" id="flashBtn" title="Flash">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="develop" id="develop">
+        <div class="env-wrap">
+          <div class="env-body">
+            <div class="flapline"></div>
+            <div class="env-seal">✦</div>
+            <div class="env-stamp">Prent</div>
+          </div>
+        </div>
+        <div class="status">Sealed &amp; developing<span class="dots"></span></div>
+      </div>
+      <div class="done" id="done">
+        <div class="seal">✦</div>
+        <h2>Roll finished</h2>
+        <p>5 moments sealed. They're developing now, your prints are on the way.</p>
+        <button class="again" id="again">Load a new roll</button>
+      </div>
+
+      <!-- ===== ROLLS OVERVIEW ===== -->
+      <div class="overview" id="overview">
+        <div class="ov-head">
+          <div>
+            <div class="ov-title">Your rolls</div>
+            <div class="ov-sub">Active rolls across your circles</div>
+          </div>
+          <div class="ov-close" id="ovClose" title="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </div>
+        </div>
+        <div class="ov-list" id="ovList"></div>
+        <div class="ov-new" id="ovNew">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          Start a new roll
+        </div>
+      </div>
+      </div><!-- /screen-inner -->
+    </div>
+  </div>
+
+    <button class="rotate-fab" id="rotateBtn" title="Rotate device">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="7" width="18" height="10" rx="2"/>
+        <path d="M8 3.6 6.4 5.2 8 6.8"/><path d="M6.5 5.2H14a4 4 0 0 1 4 4v.6"/>
+      </svg>
+      <span class="rf-label">Landscape</span>
+    </button>
+  </div>
+
+<script>
+const CAPTURE = -52;            // shorter upward drag to capture — one-thumb flick, less camera shake
+const shots = [                 // fallback viewfinder scenes (looping) when no camera
+  'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=600&q=80',
+  'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=600&q=80',
+  'https://images.unsplash.com/photo-1492633423870-43d1cd2775eb?w=600&q=80',
+  'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600&q=80',
+  'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=600&q=80'
+];
+
+// ===== ACTIVE ROLLS =====
+// Each roll's `vf` (viewfinder aspect ratio) matches its physical end product,
+// showing how the same capture design flexes across different Prent products.
+const ROLLS = [
+  {
+    id:'julia', name:"Julia's vakantie",
+    product:'Prints', fmt:'prints', vf:'3/3.4', vfLand:'16/10',
+    desc:'Classic square-ish matte prints, one per frame, delivered in a wax-sealed envelope.',
+    total:5, shot:0,
+    cover:'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=300&q=80',
+    loc:'Lisbon, PT'
+  },
+  {
+    id:'reunie', name:'Familiereünie',
+    product:'Photobook', fmt:'photobook', vf:'4/3', vfLand:'16/9',
+    desc:'A landscape hardcover photobook. Wider frames compose across the spread, printed as a bound keepsake.',
+    total:12, shot:5,
+    cover:'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=300&q=80',
+    loc:'Utrecht, NL'
+  },
+  {
+    id:'studio', name:'Studio sessies',
+    product:'Poster set', fmt:'poster', vf:'3/4', vfLand:'16/10',
+    desc:'Tall portrait posters, printed large on heavy stock. Each frame becomes a wall piece.',
+    total:6, shot:2,
+    cover:'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=300&q=80',
+    loc:'Amsterdam Noord, NL'
+  },
+  {
+    id:'brunch', name:'Zondag brunch',
+    product:'Mini squares', fmt:'square', vf:'1/1', vfLand:'1/1',
+    desc:'Instant-style square minis with a chunky white border, sized for a fridge or a wallet.',
+    total:9, shot:7,
+    cover:'https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?w=300&q=80',
+    loc:'De Pijp, Amsterdam'
+  },
+  {
+    id:'roadtrip', name:'Roadtrip zuiden',
+    product:'Film strip', fmt:'strip', vf:'2/2.4', vfLand:'21/9',
+    desc:'A perforated contact strip. Frames print in sequence on one continuous strip, like a real negative.',
+    total:8, shot:3,
+    cover:'https://images.unsplash.com/photo-1502920917128-1aa500764cbd?w=300&q=80',
+    loc:'Ardèche, FR'
+  }
+];
+
+let activeRoll = ROLLS[0];
+let TOTAL = activeRoll.total;
+
+// a pool of sample "captured" frames used to fill each roll's shot slots
+const FRAME_POOL = [
+  'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=200&q=70',
+  'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=200&q=70',
+  'https://images.unsplash.com/photo-1492633423870-43d1cd2775eb?w=200&q=70',
+  'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=200&q=70',
+  'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=200&q=70',
+  'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=200&q=70',
+  'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=200&q=70',
+  'https://images.unsplash.com/photo-1502920917128-1aa500764cbd?w=200&q=70',
+  'https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?w=200&q=70',
+  'https://images.unsplash.com/photo-1500835556837-99ac94a94552?w=200&q=70',
+  'https://images.unsplash.com/photo-1522199755839-a2bacb67c546?w=200&q=70',
+  'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?w=200&q=70'
+];
+// deterministic filled frames for a roll (so it looks consistent)
+function framesFor(roll){
+  const out=[];
+  for(let i=0;i<roll.shot;i++) out.push(FRAME_POOL[(roll.id.length + i*3) % FRAME_POOL.length]);
+  return out;
+}
+
+const deck  = document.getElementById('deck');
+const env   = document.getElementById('env');
+const slot  = document.getElementById('slot');
+const flash = document.getElementById('flash');
+const foot  = document.getElementById('foot'); // may be null
+const doneEl= document.getElementById('done');
+const develop = document.getElementById('develop');
+const flipBtn = document.getElementById('flipBtn');
+const flashBtn= document.getElementById('flashBtn');
+const overview= document.getElementById('overview');
+const rollinfo= document.getElementById('rollinfo');
+
+let remaining = TOTAL;          // frames left to shoot
+let busy = false;
+
+// ---- live camera ----
+let stream = null;
+let facing = 'environment';     // 'environment' = back, 'user' = front (selfie)
+let flashOn = false;
+let camOK = false;
+
+async function startCamera(){
+  // stop any existing stream first
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode: facing }, audio:false
+    });
+    camOK = true;
+  }catch(err){
+    camOK = false;   // permission denied or no camera: fall back to stock scenes
+  }
+  bindStreamToTop();
+}
+
+// attach the current stream to the top card's <video>, if present
+function bindStreamToTop(){
+  const v = deck.querySelector('.card video');
+  if(v && stream){
+    v.srcObject = stream;
+    v.classList.toggle('front', facing==='user');
+    v.play().catch(()=>{});
+  }
+}
+
+// build the 3-deep visible stack for the current top frame
+function render(){
+  deck.innerHTML='';
+  const depth = Math.min(3, remaining);
+  for(let i=depth-1;i>=0;i--){        // back to front
+    const frameNo = remaining - i;    // top card = remaining, cards behind count down
+    const idx = (TOTAL - remaining + i) % shots.length;
+    const card = document.createElement('div');
+    card.className='card';
+    card.style.zIndex = 10 + (depth - i);
+    card.style.setProperty('--vf', activeRoll.vf);   // viewfinder shape = product format
+    card.style.setProperty('--vf-land', activeRoll.vfLand || '16/9');
+    // stack offset behind the top card
+    const back = i;
+    card.style.transform =
+      `translate(-50%,calc(-50% + ${back*10}px)) scale(${1-back*0.04})`;
+    card.style.opacity = i>2?0:1;
+
+    // only the top card (i===0) is a live viewfinder
+    const frontFace = (i===0)
+      ? `<div class="frame">
+           <video playsinline muted autoplay></video>
+           <div class="rec"><span class="live-dot"></span>${activeRoll.product.toUpperCase()}</div>
+           <div class="vf">
+             <span class="corner tl"></span><span class="corner tr"></span>
+             <span class="corner bl"></span><span class="corner br"></span>
+             <span class="dot"></span>
+           </div>
+         </div>`
+      : `<div class="frame"><img src="${activeRoll.cover}" alt=""></div>`;
+
+    const pinSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="2.6"/></svg>`;
+    const calSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>`;
+    const flipSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h13a4 4 0 0 1 0 8H8"/><path d="M6 4 3 7l3 3"/><path d="M18 20l3-3-3-3"/></svg>`;
+
+    card.innerHTML = `
+      <div class="card-inner">
+        <div class="card-face front">
+          ${frontFace}
+          <div class="meta">
+            <div class="row1">
+              <span class="mroll">${activeRoll.name}</span>
+              <span class="count">${frameNo}/${TOTAL}</span>
+            </div>
+            <div class="mline">
+              <span class="mitem">${calSvg}${todayStr()}</span>
+              <span class="mitem">${pinSvg}${activeRoll.loc || 'Locating…'}</span>
+            </div>
+            ${ i===0 ? `<div class="flip-hint">${flipSvg} Tap to write on the back</div>` : '' }
+          </div>
+        </div>
+        <div class="card-face back">
+          <div class="back-head">
+            <span>Message on the back</span>
+            <span class="qr-tag">QR</span>
+          </div>
+          <div class="msg-area">
+            <textarea placeholder="Write a note that prints on the back of this photo…" maxlength="180"></textarea>
+          </div>
+          <div class="back-foot">${activeRoll.name} · ${todayStr()}</div>
+          <div class="flip-hint bk">${flipSvg} Tap to flip to the photo</div>
+        </div>
+      </div>`;
+    deck.appendChild(card);
+    if(i===0){ attachDrag(card); attachFlip(card); }   // top card: drag to capture + tap to flip
+  }
+  bindStreamToTop();                  // hook the live stream into the new top card
+}
+
+// date helpers for the print metadata
+function todayStr(){
+  const d=new Date();
+  return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+}
+function dayName(){
+  return new Date().toLocaleDateString('en-GB',{weekday:'long'});
+}
+
+// switch to a given roll and prepare the camera view
+function openRoll(roll){
+  activeRoll = roll;
+  TOTAL = roll.total;
+  remaining = roll.total - roll.shot;   // frames left to shoot
+  env.querySelector('.title .tt').textContent = roll.name;
+  document.querySelector('.env-stamp') && (document.querySelector('.env-stamp').textContent = roll.product);
+  doneEl.classList.remove('show');
+  develop.classList.remove('show');
+  const c=document.getElementById('controls');
+  c.style.opacity='1'; c.style.pointerEvents='auto';
+  render();
+}
+
+function attachDrag(card){
+  let startY=0,startX=0,dx=0,dy=0,dragging=false,moved=false;
+  let lastY=0,lastT=0,vy=0;   // track upward velocity for flick-to-capture
+
+  const down = e=>{
+    if(busy) return;
+    if(card.classList.contains('flipped')) return;   // writing on the back: no capture drag
+    dragging=true; moved=false;
+    const p=point(e);
+    startY=p.y;startX=p.x;dx=0;dy=0;
+    lastY=p.y;lastT=performance.now();vy=0;
+    card.style.transition='none';
+    if(foot)foot.style.opacity='0';
+    window.addEventListener('pointermove',move);
+    window.addEventListener('pointerup',up);
+  };
+  const move = e=>{
+    if(!dragging) return;
+    const p=point(e);
+    dx=p.x-startX; dy=p.y-startY;
+    // instantaneous vertical velocity (px/ms), negative = upward
+    const now=performance.now();
+    const dt=now-lastT;
+    if(dt>0){ vy = (p.y-lastY)/dt; lastY=p.y; lastT=now; }
+    if(Math.abs(dx)>5 || Math.abs(dy)>5){
+      if(!moved){ moved=true; env.classList.add('dragging'); slot.textContent='pull a card up'; }
+    }
+    if(!moved) return;
+    const rot = dx*0.03;
+    card.style.transform=`translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px)) rotate(${rot}deg)`;
+    const near  = dy < -18;                 // envelope reacts almost immediately
+    const armed = dy < CAPTURE;
+    env.classList.toggle('near', near && !armed);
+    env.classList.toggle('armed', armed);
+    slot.textContent = armed ? 'release to capture'
+                     : near   ? 'flick up to capture'
+                     :          'pull a card up';
+  };
+  const up = ()=>{
+    dragging=false;
+    window.removeEventListener('pointermove',move);
+    window.removeEventListener('pointerup',up);
+    if(!moved){ flipCard(card, true); reset(card); return; }   // a tap → flip to the back
+    // capture if dragged past the (short) threshold OR flicked up quickly past a small distance
+    const flicked = (vy < -0.5) && (dy < -22);
+    if(dy < CAPTURE || flicked){ capture(card,dx); }
+    else{ reset(card); }
+  };
+
+  card.addEventListener('pointerdown',down);
+}
+
+// flip helpers
+function flipCard(card, toBack){
+  card.classList.toggle('flipped', toBack);
+  env.classList.remove('near','armed','dragging');
+  slot.textContent='pull a card up';
+  if(toBack){
+    // focus the message field shortly after the flip starts
+    setTimeout(()=>{ const ta=card.querySelector('textarea'); ta && ta.focus(); }, 320);
+  }
+}
+function attachFlip(card){
+  // "flip back" control and clicks on the back header return to the front
+  card.querySelectorAll('.bk').forEach(el=>{
+    el.addEventListener('click', ev=>{ ev.stopPropagation(); flipCard(card, false); });
+  });
+}
+
+function point(e){
+  return {x:e.clientX ?? (e.touches&&e.touches[0].clientX),
+          y:e.clientY ?? (e.touches&&e.touches[0].clientY)};
+}
+
+function reset(card){
+  env.classList.remove('armed','near','dragging');
+  slot.textContent='pull a card up';
+  card.style.transition='transform .35s cubic-bezier(.2,.9,.25,1)';
+  card.style.transform='translate(-50%,-50%)';
+}
+
+function capture(card,dx){
+  busy=true;
+  slot.textContent='captured ✦';                 // envelope stays open to swallow it
+  // fling the card up through the open mouth
+  card.style.transition='transform .40s cubic-bezier(.4,0,.2,1),opacity .40s';
+  card.style.transform=`translate(calc(-50% + ${dx}px),-150%) scale(.8) rotate(${dx*0.05}deg)`;
+  card.style.opacity='0';
+  flash.classList.toggle('strong', flashOn);     // brighter flash when flash is on
+  flash.classList.add('go');
+  if(navigator.vibrate) navigator.vibrate(18);
+
+  // let the card get eaten, then the flap closes shut
+  setTimeout(()=>{ env.classList.remove('armed','near','dragging'); }, 300);
+
+  setTimeout(()=>{
+    flash.classList.remove('go');
+    remaining--;
+    if(remaining<=0){ finishRoll(); busy=false; return; }
+    slot.textContent='pull a card up';
+    render();
+    busy=false;
+  },440);
+}
+
+function finishRoll(){
+  deck.innerHTML='';
+  if(foot)foot.style.opacity='0';
+  document.getElementById('controls').style.opacity='0';
+  document.getElementById('controls').style.pointerEvents='none';
+  // envelope drops in from the top onto a white background
+  develop.classList.add('show');
+  if(navigator.vibrate) navigator.vibrate([20,40,20]);
+  // after the drop and seal, hand off to the finished screen
+  setTimeout(()=>{
+    doneEl.classList.add('show');
+  }, 3400);
+}
+
+document.getElementById('again').addEventListener('click',()=>{
+  remaining=TOTAL;
+  env.classList.remove('armed','near','dragging');
+  slot.textContent='pull a card up';
+  develop.classList.remove('show');
+  doneEl.classList.remove('show');
+  if(foot)foot.style.opacity='1';
+  const c=document.getElementById('controls');
+  c.style.opacity='1'; c.style.pointerEvents='auto';
+  render();
+  bindStreamToTop();
+});
+
+// ---- control buttons ----
+flipBtn.addEventListener('click', async ()=>{
+  facing = (facing==='environment') ? 'user' : 'environment';
+  flipBtn.classList.toggle('on', facing==='user');
+  await startCamera();
+});
+
+flashBtn.addEventListener('click', ()=>{
+  flashOn = !flashOn;
+  flashBtn.classList.toggle('on', flashOn);
+});
+
+// rotate the mockup between portrait and landscape
+const rotateBtn = document.getElementById('rotateBtn');
+rotateBtn.addEventListener('click', ()=>{
+  const land = document.body.classList.toggle('landscape');
+  rotateBtn.title = land ? 'Rotate to portrait' : 'Rotate to landscape';
+  const lbl = rotateBtn.querySelector('.rf-label');
+  if(lbl) lbl.textContent = land ? 'Portrait' : 'Landscape';
+});
+
+// ---- rolls overview ----
+const ovList = document.getElementById('ovList');
+
+function buildOverview(){
+  ovList.innerHTML = ROLLS.map(r=>{
+    const left = r.total - r.shot;
+    const pct = Math.round(r.shot / r.total * 100);
+    // the format preview: a mini product whose shape matches the end product
+    let objInner = `<img src="${r.cover}" alt="">`;
+    if(r.fmt==='strip'){
+      objInner = `<img src="${r.cover}" alt=""><img src="${r.cover}" alt=""><img src="${r.cover}" alt="">`;
+    }
+    return `
+      <div class="roll" data-id="${r.id}">
+        <div class="fmt ${r.fmt}"><div class="obj">${objInner}</div></div>
+        <div class="roll-info">
+          <div class="roll-name">${r.name}</div>
+          <span class="roll-product">${r.product}</span>
+          <div class="roll-desc">${r.desc}</div>
+          <div class="roll-meta">
+            <span>${left} left</span>
+            <span class="prog"><span style="width:${pct}%"></span></span>
+            <span>${r.shot}/${r.total}</span>
+          </div>
+        </div>
+        <div class="roll-arrow">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+        </div>
+      </div>`;
+  }).join('');
+
+  ovList.querySelectorAll('.roll').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const roll = ROLLS.find(r=>r.id===el.dataset.id);
+      closeOverview();
+      setTimeout(()=>openRoll(roll), 120);
+    });
+  });
+}
+
+function showOverview(){
+  buildOverview();
+  overview.classList.add('show');
+}
+function closeOverview(){
+  overview.classList.remove('show');
+}
+
+document.getElementById('rollsBtn').addEventListener('click', showOverview);
+document.getElementById('ovClose').addEventListener('click', closeOverview);
+document.getElementById('ovNew').addEventListener('click', ()=>{
+  closeOverview();
+  setTimeout(()=>openRoll(ROLLS[0]), 120);
+});
+
+// ---- roll info panel (tap the envelope title) ----
+const titleBtn = document.getElementById('titleBtn');
+function buildRollInfo(){
+  const r = activeRoll;
+  document.getElementById('riName').textContent = r.name;
+  document.getElementById('riProduct').textContent = r.product;
+  document.getElementById('riCount').textContent = `${r.shot} of ${r.total} frames shot · ${r.total - r.shot} left`;
+  document.getElementById('riDesc').textContent = r.desc;
+
+  // format preview
+  const fmt = document.getElementById('riFmt');
+  fmt.className = 'ri-fmt ' + r.fmt;
+  let objInner = `<img src="${r.cover}" alt="">`;
+  if(r.fmt==='strip') objInner = `<img src="${r.cover}"><img src="${r.cover}"><img src="${r.cover}">`;
+  fmt.innerHTML = `<div class="obj">${objInner}</div>`;
+
+  // frame slots: filled = captured frames, empty = still to shoot
+  const filled = framesFor(r);
+  let slots='';
+  for(let i=0;i<r.total;i++){
+    slots += (i<filled.length)
+      ? `<div class="ri-slot"><img src="${filled[i]}" alt=""><span class="num">${i+1}</span></div>`
+      : `<div class="ri-slot empty"><span class="num">${i+1}</span></div>`;
+  }
+  document.getElementById('riSlots').innerHTML = slots;
+}
+function openRollInfo(){
+  buildRollInfo();
+  rollinfo.classList.add('show');
+  titleBtn.classList.add('open');
+}
+function closeRollInfo(){
+  rollinfo.classList.remove('show');
+  titleBtn.classList.remove('open');
+}
+titleBtn.addEventListener('click',(e)=>{
+  e.stopPropagation();
+  rollinfo.classList.contains('show') ? closeRollInfo() : openRollInfo();
+});
+document.getElementById('riScrim').addEventListener('click', closeRollInfo);
+document.getElementById('riSheet').addEventListener('click', closeRollInfo);
+
+render();
+
+// kick off the camera. Browsers require HTTPS (or localhost) + a user gesture on
+// some devices, so we also retry on first tap anywhere.
+startCamera();
+window.addEventListener('pointerdown', function once(){
+  if(!camOK) startCamera();
+  window.removeEventListener('pointerdown', once);
+}, {once:false});
+
+</script>
+</body>
+</html>
