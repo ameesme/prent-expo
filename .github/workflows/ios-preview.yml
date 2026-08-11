@@ -1,0 +1,79 @@
+name: iOS preview build
+
+# Queues an iOS build on EAS. Expo runs the macOS workers, so this job only needs to
+# read the project and hand it off — no Mac, no Xcode on the runner.
+#
+# Manual dispatch only, on purpose: every run consumes an EAS build credit, so this
+# should not fire on each push.
+#
+# Before the first CI run, two things must exist:
+#   1. an EXPO_TOKEN repository secret — expo.dev → account settings → access tokens;
+#   2. an EAS project id in app.json (extra.eas.projectId), created by running
+#      `npx eas-cli init` (or one interactive build) locally and committing the result.
+# Both are checked below so a missing one fails fast with a readable message rather
+# than a confusing non-interactive prompt error.
+#
+# The `preview` and `production` profiles additionally need iOS signing credentials.
+# Create them once with an interactive local run (`npx eas-cli build -p ios --profile
+# preview`, sign in with the Apple ID, let EAS store them); afterwards CI reuses them.
+# The `preview:simulator` profile needs no Apple account at all — start there.
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: EAS build profile
+        type: choice
+        default: preview:simulator
+        options:
+          - preview:simulator
+          - preview
+          - production
+
+jobs:
+  build:
+    name: eas build -p ios --profile ${{ inputs.profile }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Check the EXPO_TOKEN secret is set
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::EXPO_TOKEN is not set. Create an access token at" \
+                 "https://expo.dev/settings/access-tokens and add it as a repository" \
+                 "secret named EXPO_TOKEN (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+
+      - name: Check app.json has an EAS project id
+        run: |
+          if ! node -e "const c=require('./app.json');process.exit(c.expo?.extra?.eas?.projectId?0:1)"; then
+            echo "::error::app.json has no extra.eas.projectId, so EAS cannot tell which" \
+                 "project to build. Run 'npx eas-cli init' locally, then commit app.json."
+            exit 1
+          fi
+
+      - run: npm ci
+
+      # --no-wait returns as soon as the build is queued, with a link to follow it,
+      # instead of holding a runner for the length of the queue plus the build.
+      - name: Queue the build on EAS
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          npx eas-cli@latest build \
+            --platform ios \
+            --profile "${{ inputs.profile }}" \
+            --non-interactive \
+            --no-wait
+
+      - name: Where to find the build
+        run: echo "Builds are listed at https://expo.dev/accounts/[account]/projects/prent/builds"

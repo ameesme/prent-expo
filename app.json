@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Prent",
+    "slug": "prent",
+    "version": "1.0.0",
+    "scheme": "prent",
+    "orientation": "default",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#ffffff",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "me.amees.prent"
+    },
+    "android": {
+      "package": "me.amees.prent",
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Prent gebruikt je camera als viewfinder om foto's in je envelop te vegen."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Prent bewaart de foto's die je maakt in je fotobibliotheek.",
+          "savePhotosPermission": "Prent bewaart de foto's die je maakt in je fotobibliotheek.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
+    ]
+  }
+}
