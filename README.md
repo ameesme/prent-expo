@@ -7,6 +7,33 @@ captured frame to the photo library.
 The HTML prototype is kept in the repo as the design reference. The port is pixel-exact against
 it — see [Fidelity](#fidelity).
 
+## Screens
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/capture.png" width="230" alt="Capture screen with the card deck and viewfinder"><br><sub><b>Capture</b> — swipe the card up</sub></td>
+    <td align="center"><img src="docs/screenshots/back.png" width="230" alt="Card back with a ruled note"><br><sub><b>Card back</b> — tap the card</sub></td>
+    <td align="center"><img src="docs/screenshots/roll-info.png" width="230" alt="Roll info sheet"><br><sub><b>Roll info</b> — tap the title</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/overview.png" width="230" alt="Rolls overview list"><br><sub><b>Rolls</b> — five products, five frame shapes</sub></td>
+    <td align="center"><img src="docs/screenshots/developing.png" width="230" alt="Sealed and developing screen"><br><sub><b>Sealed &amp; developing</b></sub></td>
+    <td align="center"><img src="docs/screenshots/finished.png" width="230" alt="Roll finished screen"><br><sub><b>Roll finished</b></sub></td>
+  </tr>
+</table>
+
+<img src="docs/screenshots/landscape.png" width="700" alt="Landscape layout with the controls in a column on the right">
+
+Rotating reflows to the prototype's landscape design: the envelope becomes a slim bar, the
+viewfinder widens to the product's landscape ratio, and the controls stack on the right edge. The
+title overlapping *pull a card up* there is the prototype's own behaviour, kept deliberately — see
+[Deviations](#deviations-from-the-prototype).
+
+> Captured from the web build at the 366×820 design canvas in a headless browser, which is why the
+> viewfinder is empty and the remote cover art is missing: a sandboxed browser gets no camera, and
+> `images.unsplash.com` was unreachable from the machine these were taken on. On a device the
+> viewfinder is live and the covers load — the frames show the app's real camera-denied state.
+
 ## Run it
 
 ```bash
@@ -87,6 +114,11 @@ the product it prints as (prints, photobook, poster set, mini squares, film stri
 rolls in the overview reshapes the frame.
 
 ## Fidelity
+
+<img src="docs/screenshots/fidelity.png" width="720" alt="The HTML prototype and the Expo app side by side, showing an identical capture screen">
+
+Same screen, same canvas, both with the camera denied. The only differences are the two things the
+port drops on purpose: the mockup's fake notch and its bezel-rounded screen corners.
 
 The prototype is authored with absolute pixel values against a fixed canvas, so the port keeps
 that canvas and scales it:
