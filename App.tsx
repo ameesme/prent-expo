@@ -10,6 +10,7 @@ import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { CaptureScreen } from './src/screens/CaptureScreen';
 import { COLORS } from './src/theme';
 
@@ -34,7 +35,9 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <CaptureScreen />
+        <ErrorBoundary>
+          <CaptureScreen />
+        </ErrorBoundary>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

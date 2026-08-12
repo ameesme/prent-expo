@@ -181,6 +181,8 @@ export function Viewfinder({
   facing,
   flashOn,
   cameraEnabled,
+  previewUri,
+  onCameraReady,
   fallbackIndex,
 }: {
   m: Metrics;
@@ -190,9 +192,17 @@ export function Viewfinder({
   facing?: CameraType;
   flashOn?: boolean;
   cameraEnabled?: boolean;
+  previewUri?: string | null;
+  onCameraReady?: () => void;
   fallbackIndex?: number;
 }) {
   const { d } = m;
+
+  // Only the top card can be live — iOS allows a single capture session — so the cards
+  // behind it show the most recent real camera frame, falling back to the roll cover.
+  const still = live
+    ? FALLBACK_SHOTS[(fallbackIndex ?? 0) % FALLBACK_SHOTS.length]
+    : (previewUri ?? roll.cover);
 
   return (
     <View
@@ -214,18 +224,11 @@ export function Viewfinder({
           // expo-camera does not mirror by default.
           mirror={facing === 'front'}
           animateShutter={false}
+          onCameraReady={onCameraReady}
           responsiveOrientationWhenOrientationLocked
         />
       ) : (
-        <Image
-          source={{
-            uri: live
-              ? FALLBACK_SHOTS[(fallbackIndex ?? 0) % FALLBACK_SHOTS.length]
-              : roll.cover,
-          }}
-          style={StyleSheet.absoluteFill}
-          resizeMode="cover"
-        />
+        <Image source={{ uri: still }} style={StyleSheet.absoluteFill} resizeMode="cover" />
       )}
 
       {live ? (

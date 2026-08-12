@@ -47,6 +47,8 @@ export function Card({
   facing,
   flashOn,
   cameraEnabled,
+  previewUri,
+  onCameraReady,
   fallbackIndex,
   onLayout,
 }: {
@@ -66,6 +68,8 @@ export function Card({
   facing?: CameraType;
   flashOn?: boolean;
   cameraEnabled?: boolean;
+  previewUri?: string | null;
+  onCameraReady?: () => void;
   fallbackIndex?: number;
   onLayout?: (event: LayoutChangeEvent) => void;
 }) {
@@ -127,6 +131,8 @@ export function Card({
         facing={facing}
         flashOn={flashOn}
         cameraEnabled={cameraEnabled}
+        previewUri={previewUri}
+        onCameraReady={onCameraReady}
         fallbackIndex={fallbackIndex}
       />
 

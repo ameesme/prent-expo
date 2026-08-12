@@ -193,6 +193,13 @@ Notable implementation choices:
   would fall back inconsistently — or render as a tofu box on Android.
 - **Fonts are deep-imported** (`@expo-google-fonts/inter/400Regular`); the package roots
   re-export every weight and italic, which drags ~5MB of unused TTFs into the bundle.
+- **The gesture object is built once and never rebuilt during interaction.** Its worklets reach
+  their JS callbacks through a ref refreshed each render, and the enabled state lives in a shared
+  value that `onTouchesDown` checks with `manager.fail()` — so a touch on the flipped card still
+  passes through to the note field. Handing `GestureDetector` a new gesture mid-touch (which a
+  `.enabled(!flipped)` prop does, from the tap's own state update) crashes on native.
+- **An error boundary wraps the screen**, because a standalone build has no dev overlay: an
+  unhandled render error would otherwise drop straight to the Home Screen with nothing to report.
 
 ## Deviations from the prototype
 
@@ -212,6 +219,14 @@ Notable implementation choices:
    postmark, and it is what the prototype shows on load.
 8. Remote Unsplash covers are kept as-is, so the roll art needs a network connection, exactly
    like the prototype.
+9. **The cards behind the top one show a real camera frame**, where the prototype showed the
+   roll's cover photo, so the card revealed by a swipe is not a stock image. One frame is grabbed
+   as soon as the camera is ready and it is refreshed from every capture. iOS allows a single live
+   preview — each `CameraView` builds its own `AVCaptureSession` — so only the top card can be
+   live; the rest show the most recent still.
+10. **The pull-down roll sheet pads its content by the safe-area inset plus a gap**, not by the
+    full envelope height. The prototype's value left ~177px of dead black above the roll name on a
+    Dynamic Island phone; this lands at ~120px.
 
 Two of the prototype's own quirks were kept deliberately, having confirmed they render the same
 way in the original: the frame counter **counts down** (`5/5`, `4/5`, … — a film counter showing

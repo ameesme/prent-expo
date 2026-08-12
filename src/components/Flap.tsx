@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
-import { View } from 'react-native';
 import Animated, {
   Easing,
+  useAnimatedProps,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -11,13 +11,18 @@ import Svg, { Path } from 'react-native-svg';
 import { ANIM, type Metrics } from '../metrics';
 import { COLORS } from '../theme';
 
+const AnimatedSvg = Animated.createAnimatedComponent(Svg);
+
 /**
  * The triangular envelope mouth that peels open as the card is dragged up.
  *
  * In the prototype the SVG uses `preserveAspectRatio="none"` inside a container whose
- * height animates 0 → 24 → 36 → 54, so the artwork is squashed rather than clipped.
- * `scaleY` from the top edge reproduces that exactly, and animating a transform keeps
- * the whole thing on the UI thread.
+ * height animates 0 → 24 → 36 → 54, so the artwork is squashed rather than clipped. Here
+ * the SVG's own `height` is animated to reproduce that: scaling the view instead would
+ * stretch an already-rasterised layer, which shows up as soft, stepped edges.
+ *
+ * The container's bottom edge is pinned, so growing height opens the mouth upwards from
+ * the envelope's lower edge — matching `bottom:-1px` in the CSS.
  */
 export function Flap({ m, phase }: { m: Metrics; phase: number }) {
   const { d } = m;
@@ -41,14 +46,11 @@ export function Flap({ m, phase }: { m: Metrics; phase: number }) {
     opacity.value = withTiming(phase >= 1 ? 1 : 0, { duration: ANIM.flapOpacity });
   }, [target, phase, height, opacity]);
 
-  const outer = useAnimatedStyle(() => ({
-    height: height.value,
-    opacity: opacity.value,
-  }));
+  const wrapper = useAnimatedStyle(() => ({ opacity: opacity.value }));
 
-  const inner = useAnimatedStyle(() => ({
-    transform: [{ scaleY: height.value / d.env.flapHeight }],
-  }));
+  // Animating the prop, not a transform, so the shape is re-drawn at every height.
+  // Clamped because the closing easing undershoots, and a negative SVG height is invalid.
+  const svgProps = useAnimatedProps(() => ({ height: Math.max(0, height.value) }));
 
   return (
     <Animated.View
@@ -59,31 +61,18 @@ export function Flap({ m, phase }: { m: Metrics; phase: number }) {
           bottom: -m.S,
           left: (m.width - d.env.flapWidth) / 2,
           width: d.env.flapWidth,
-          overflow: 'hidden',
           zIndex: 2,
         },
-        outer,
+        wrapper,
       ]}>
-      <Animated.View
-        style={[
-          {
-            width: d.env.flapWidth,
-            height: d.env.flapHeight,
-            transformOrigin: ['50%', 0, 0],
-          },
-          inner,
-        ]}>
-        <View>
-          <Svg
-            width={d.env.flapWidth}
-            height={d.env.flapHeight}
-            viewBox="0 0 220 60"
-            preserveAspectRatio="none">
-            <Path fill={COLORS.flapInside} d="M0 0 H220 V14 L110 60 L0 14 Z" />
-            <Path fill={COLORS.flapLip} d="M0 0 L110 44 L220 0 L220 8 L110 52 L0 8 Z" />
-          </Svg>
-        </View>
-      </Animated.View>
+      <AnimatedSvg
+        width={d.env.flapWidth}
+        animatedProps={svgProps}
+        viewBox="0 0 220 60"
+        preserveAspectRatio="none">
+        <Path fill={COLORS.flapInside} d="M0 0 H220 V14 L110 60 L0 14 Z" />
+        <Path fill={COLORS.flapLip} d="M0 0 L110 44 L220 0 L220 8 L110 52 L0 8 Z" />
+      </AnimatedSvg>
     </Animated.View>
   );
 }

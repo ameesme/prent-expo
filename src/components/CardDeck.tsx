@@ -1,7 +1,12 @@
 import type { CameraView, CameraType } from 'expo-camera';
-import type { RefObject } from 'react';
-import { StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedKeyboard, useAnimatedStyle } from 'react-native-reanimated';
+import { type RefObject, useEffect } from 'react';
+import { Keyboard, Platform, StyleSheet, View } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import type { ComposedGesture, GestureType } from 'react-native-gesture-handler';
 
 import type { Roll } from '../data/rolls';
@@ -30,6 +35,8 @@ export function CardDeck({
   facing,
   flashOn,
   cameraEnabled,
+  previewUri,
+  onCameraReady,
   cardHeight,
   onCardHeight,
 }: {
@@ -47,17 +54,44 @@ export function CardDeck({
   facing: CameraType;
   flashOn: boolean;
   cameraEnabled: boolean;
+  previewUri: string | null;
+  onCameraReady: () => void;
   cardHeight: number;
   onCardHeight: (height: number) => void;
 }) {
   const depth = Math.min(3, remaining);
-  const keyboard = useAnimatedKeyboard();
+
+  // Keyboard height, from React Native's own events. Reanimated's `useAnimatedKeyboard` is
+  // deprecated as of 4.5.1 and was the other native subscription firing at the moment the
+  // note field takes focus — the moment the app was reported crashing.
+  const keyboardHeight = useSharedValue(0);
+
+  useEffect(() => {
+    const duration = Platform.OS === 'ios' ? 250 : 0;
+    const config = { duration, easing: Easing.out(Easing.ease) };
+    const show = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      (event) => {
+        keyboardHeight.value = withTiming(event.endCoordinates?.height ?? 0, config);
+      },
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        keyboardHeight.value = withTiming(0, config);
+      },
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [keyboardHeight]);
 
   // Lift the deck just enough to keep the note field clear of the keyboard.
   const shift = useAnimatedStyle(() => {
     if (!flipped || cardHeight === 0) return { transform: [{ translateY: 0 }] };
     const bottom = m.deck.centerY + cardHeight / 2 + m.s(12);
-    const overlap = bottom - (m.height - keyboard.height.value);
+    const overlap = bottom - (m.height - keyboardHeight.value);
     return { transform: [{ translateY: -Math.max(0, overlap) }] };
   });
 
@@ -102,6 +136,8 @@ export function CardDeck({
             facing={facing}
             flashOn={flashOn}
             cameraEnabled={cameraEnabled}
+            previewUri={previewUri}
+            onCameraReady={i === 0 ? onCameraReady : undefined}
             fallbackIndex={total - remaining}
             onLayout={i === 0 ? (e) => onCardHeight(e.nativeEvent.layout.height) : undefined}
           />
