@@ -220,10 +220,17 @@ Notable implementation choices:
 8. Remote Unsplash covers are kept as-is, so the roll art needs a network connection, exactly
    like the prototype.
 9. **The cards behind the top one show a real camera frame**, where the prototype showed the
-   roll's cover photo, so the card revealed by a swipe is not a stock image. One frame is grabbed
-   as soon as the camera is ready and it is refreshed from every capture. iOS allows a single live
-   preview — each `CameraView` builds its own `AVCaptureSession` — so only the top card can be
-   live; the rest show the most recent still.
+   roll's cover photo, so the card revealed by a swipe is not a stock image. The frame refreshes
+   the moment a finger lands, which is early enough that the card a drag uncovers is showing a
+   view about 150ms old — indistinguishable from live at flick speed. A grab at camera-ready seeds
+   it so it is never empty, and each capture refreshes it for free.
+
+   Only the top card can be live: `expo-camera` builds one `AVCaptureSession` per `CameraView`
+   (`CameraView.swift` assigns `previewLayer.session = sessionManager.session`) and exposes no way
+   to share one, while iOS will not run two sessions against the same camera. Sharing a single
+   session across preview layers is possible in AVFoundation, so a truly live second preview would
+   need custom native code — which is why the alternative is a window cut-out design, where one
+   fixed camera layer shows through every card and the image stops travelling with the card.
 10. **The pull-down roll sheet pads its content by the safe-area inset plus a gap**, not by the
     full envelope height. The prototype's value left ~177px of dead black above the roll name on a
     Dynamic Island phone; this lands at ~120px.

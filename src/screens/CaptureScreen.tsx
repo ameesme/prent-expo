@@ -36,6 +36,7 @@ export function CaptureScreen() {
   const camera = useRef<CameraView | null>(null);
   const flash = useRef<FlashHandle | null>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const lastSeed = useRef(0);
 
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
@@ -156,12 +157,17 @@ export function CaptureScreen() {
   }, [cameraPermission]);
 
   /**
-   * iOS gives one live preview per camera — each `CameraView` builds its own
-   * `AVCaptureSession` — so the cards *behind* the top one cannot be live. They show a real
-   * frame instead: one grabbed as soon as the camera is ready, then the latest capture.
+   * The cards *behind* the top one cannot be live: expo-camera builds one
+   * `AVCaptureSession` per `CameraView` and offers no way to share it, and iOS will not run
+   * two sessions against the same camera. They show a real frame instead, refreshed as the
+   * finger lands — so by the time a drag reveals the card underneath, the frame is only
+   * ~150ms old and reads as live. One grab at camera-ready seeds it so it is never empty.
    */
   const seedPreview = useCallback(async () => {
     if (!camera.current || busy.value) return;
+    const now = Date.now();
+    if (now - lastSeed.current < ANIM.seedThrottle) return;
+    lastSeed.current = now;
     try {
       const frame = await camera.current.takePictureAsync({
         quality: 0.2,
@@ -251,22 +257,29 @@ export function CaptureScreen() {
   // reach their JS callbacks through a ref that is refreshed every render, and the enabled
   // state lives in a shared value instead of a prop — which keeps the identities below
   // stable and the `useMemo` deps down to the design scale.
-  const handlers = useRef({ applyPhase, capture, resetDrag, flipToBack });
-  handlers.current = { applyPhase, capture, resetDrag, flipToBack };
+  const handlers = useRef({ applyPhase, capture, resetDrag, flipToBack, seedPreview });
+  handlers.current = { applyPhase, capture, resetDrag, flipToBack, seedPreview };
 
   const onPhase = useCallback((next: number) => handlers.current.applyPhase(next), []);
   const onCapture = useCallback((dx: number) => handlers.current.capture(dx), []);
   const onReset = useCallback(() => handlers.current.resetDrag(), []);
   const onFlip = useCallback(() => handlers.current.flipToBack(), []);
+  const onTouch = useCallback(() => void handlers.current.seedPreview(), []);
 
   // Thresholds are design pixels in the prototype, so they scale with the canvas.
   const S = m.S;
   const gesture = useMemo(() => {
     // Failing on touch-down is how a *stable* gesture gets switched off: the touch then
     // passes through to the note field and the flip-back control on the card's back.
+    // A live touch also refreshes the still on the cards underneath, so the frame the drag
+    // reveals is current. Both raced gestures report the touch; `seedPreview` throttles.
     const guard = (manager: { fail: () => void }) => {
       'worklet';
-      if (flippedSV.value || busy.value) manager.fail();
+      if (flippedSV.value || busy.value) {
+        manager.fail();
+        return;
+      }
+      runOnJS(onTouch)();
     };
 
     // `minDistance` is the prototype's 5px slop: below it the drag never starts, which
@@ -319,7 +332,7 @@ export function CaptureScreen() {
       });
 
     return Gesture.Race(pan, tap);
-  }, [S, busy, flippedSV, lastPhase, onCapture, onFlip, onPhase, onReset, rot, x, y]);
+  }, [S, busy, flippedSV, lastPhase, onCapture, onFlip, onPhase, onReset, onTouch, rot, x, y]);
 
   const openRoll = useCallback(
     (next: Roll) => {

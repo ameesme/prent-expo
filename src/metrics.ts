@@ -76,6 +76,8 @@ export const ANIM = {
   press: 150,
   /** Settle time before grabbing the still shown on the cards behind the top one. */
   seedDelay: 500,
+  /** Minimum gap between those grabs, since both raced gestures report a touch. */
+  seedThrottle: 700,
 } as const;
 
 type Table = { [key: string]: number | Table };
