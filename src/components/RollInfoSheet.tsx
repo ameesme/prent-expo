@@ -79,8 +79,8 @@ export function RollInfoSheet({
           showsVerticalScrollIndicator={false}
           style={{ flexShrink: 1 }}
           contentContainerStyle={{
-            // The top padding clears the envelope bar, as in the prototype.
-            paddingTop: m.env.idle,
+            // Clears the notch plus a gap, rather than the whole envelope height.
+            paddingTop: m.envPadTop + d.sheet.padTop,
             paddingHorizontal: d.sheet.padH + m.insets.left,
             // The grab handle is absolutely placed inside this padding, not below it.
             paddingBottom: d.sheet.padBottom,

@@ -74,6 +74,10 @@ export const ANIM = {
   scrim: 300,
   rollSwitchDelay: 120,
   press: 150,
+  /** Settle time before grabbing the still shown on the cards behind the top one. */
+  seedDelay: 500,
+  /** Minimum gap between those grabs, since both raced gestures report a touch. */
+  seedThrottle: 700,
 } as const;
 
 type Table = { [key: string]: number | Table };
@@ -224,6 +228,12 @@ const PORTRAIT = {
   },
   sheet: {
     radius: 28,
+    /**
+     * Gap between the safe-area inset and the sheet's first content. The prototype pads by
+     * the whole envelope height, which on a Dynamic Island phone left ~177px of dead black;
+     * this lands at ~120px there and ~97px on a device with no notch.
+     */
+    padTop: 57,
     padH: 22,
     padBottom: 26,
     grabW: 38,
