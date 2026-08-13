@@ -12,13 +12,13 @@ it — see [Fidelity](#fidelity).
 <table>
   <tr>
     <td align="center"><img src="docs/screenshots/capture.png" width="230" alt="Capture screen with the card deck and viewfinder"><br><sub><b>Capture</b> — swipe the card up</sub></td>
-    <td align="center"><img src="docs/screenshots/back.png" width="230" alt="Card back with a ruled note"><br><sub><b>Card back</b> — tap the card</sub></td>
     <td align="center"><img src="docs/screenshots/roll-info.png" width="230" alt="Roll info sheet"><br><sub><b>Roll info</b> — tap the title</sub></td>
+    <td align="center"><img src="docs/screenshots/overview.png" width="230" alt="Rolls overview list"><br><sub><b>Rolls</b> — five products, five frame shapes</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/screenshots/overview.png" width="230" alt="Rolls overview list"><br><sub><b>Rolls</b> — five products, five frame shapes</sub></td>
     <td align="center"><img src="docs/screenshots/developing.png" width="230" alt="Sealed and developing screen"><br><sub><b>Sealed &amp; developing</b></sub></td>
     <td align="center"><img src="docs/screenshots/finished.png" width="230" alt="Roll finished screen"><br><sub><b>Roll finished</b></sub></td>
+    <td></td>
   </tr>
 </table>
 
@@ -101,7 +101,6 @@ prompt. It is manual-dispatch only, since every run spends an EAS build credit.
 | Screen | How to get there |
 | --- | --- |
 | Capture — card deck with a live viewfinder | default |
-| Card back — a handwritten note that prints with the photo | tap the top card |
 | Roll info — drops out of the envelope | tap the roll title |
 | Rolls overview — slides in from the left | left control button |
 | Sealed & developing — the envelope drops in | capture the last frame |
@@ -109,7 +108,8 @@ prompt. It is manual-dispatch only, since every run spends an EAS build credit.
 
 Swipe the top card up: past 52px (or a quick flick past 22px) the envelope opens its flap, the
 label turns to *release to capture*, and letting go flings the card through the mouth — flash,
-haptic tap, and the photo lands in your gallery. Each roll's viewfinder takes the aspect ratio of
+haptic tap, and the photo lands in your gallery. The card behind rises into its place as it goes,
+out of focus, and pulls focus as the live preview takes over. Each roll's viewfinder takes the aspect ratio of
 the product it prints as (prints, photobook, poster set, mini squares, film strip), so switching
 rolls in the overview reshapes the frame.
 
@@ -117,8 +117,9 @@ rolls in the overview reshapes the frame.
 
 <img src="docs/screenshots/fidelity.png" width="720" alt="The HTML prototype and the Expo app side by side, showing an identical capture screen">
 
-Same screen, same canvas, both with the camera denied. The only differences are the two things the
-port drops on purpose: the mockup's fake notch and its bezel-rounded screen corners.
+Same screen, same canvas, both with the camera denied. Three differences, all deliberate: the
+mockup's fake notch and its bezel-rounded screen corners are gone, and the card is shorter because
+the *tap to write on the back* row went with the removed card back.
 
 The prototype is authored with absolute pixel values against a fixed canvas, so the port keeps
 that canvas and scales it:
@@ -154,16 +155,21 @@ element (the prototype's webfonts served locally, since text metrics move layout
 ```
 element    field   expected     actual      delta
 envelope   h       150.0      150.0 +0.0
-card       y       235.9      235.9 +0.0
-card       h       468.2      468.2 +0.0
+card       x        18.0       18.0 +0.0
+card       w       330.0      330.0 +0.0
+card       h       468.2      432.2 -36.0   ← the removed flip-hint row
+card       y       235.9      253.9 +18.0   ← half of it, since the card is centred
 frame      h       333.2      333.2 +0.0
 controls   y       748.0      748.0 +0.0
 cbtn       x        83.0       83.0 +0.0
 ```
 
-**0.0px on every measured element**, and the roll-info sheet lands at exactly 414px tall like the
-prototype's. Each screen was also driven and screenshotted in both, then diffed side by side.
-Beyond that: `npx tsc --noEmit` is clean and `npx expo export` bundles for iOS and Android.
+**0.0px on every element the two still share.** The card's 36px is the flip-hint row
+(`margin-top 11` + `padding-top 10` + a 1px rule + the line itself), removed with the card back;
+it shifts the card's centre down by half that. The roll-info sheet's own height was 414px, matching
+the prototype's exactly, before its padding was deliberately reduced. Each screen was also driven
+and screenshotted in both, then diffed side by side. Beyond that: `npx tsc --noEmit` is clean and
+`npx expo export` bundles for iOS and Android.
 
 ## Layout of the code
 
@@ -171,12 +177,12 @@ Beyond that: `npx tsc --noEmit` is clean and `npx expo export` bundles for iOS a
 App.tsx                     fonts, orientation unlock, providers
 src/theme.ts                colours from the CSS `:root`, fonts, shadow helper
 src/metrics.ts              design tables + useMetrics(): scale, insets, anchors
-src/data/rolls.ts           the five rolls, frame pool, fallback scenes
+src/data/rolls.ts           the five rolls and their frame pool
 src/lib/gallery.ts          save a capture to the photo library
 src/screens/CaptureScreen.tsx   state machine, gesture, capture pipeline
-src/components/             Envelope, Flap, CardDeck, Card, Viewfinder, CardBack,
-                            Controls, FlashOverlay, DevelopScreen, DoneScreen,
-                            RollsOverview, RollInfoSheet, FormatPreview, icons
+src/components/             Envelope, Flap, CardDeck, Card, Viewfinder, Controls,
+                            FlashOverlay, DevelopScreen, DoneScreen, RollsOverview,
+                            RollInfoSheet, FormatPreview, ErrorBoundary, icons
 ```
 
 Notable implementation choices:
@@ -187,8 +193,6 @@ Notable implementation choices:
 - **The drag runs on the UI thread** (Reanimated shared values); only threshold crossings cross
   to JS, to swap the envelope's label. A `Tap` gesture is raced against the `Pan` so a touch that
   never travels 5px flips the card instead of dragging it.
-- **The 3D flip** gives each face its own rotation (front 0→180°, back 180→360°, both
-  `backfaceVisibility: 'hidden'`), because React Native has no `transform-style: preserve-3d`.
 - **The `✦` mark is drawn as SVG.** Neither Space Mono nor Roboto carries U+2726, so a text glyph
   would fall back inconsistently — or render as a tofu box on Android.
 - **Fonts are deep-imported** (`@expo-google-fonts/inter/400Regular`); the package roots
@@ -210,9 +214,13 @@ Notable implementation choices:
 3. **Photos are really taken and saved** to the gallery. The camera permission is requested at
    launch; add-only photo access is requested at the first capture, so the app never asks to
    *read* your library. Flash and the front/back toggle drive the real camera.
-4. When the camera is unavailable or denied, the frame shows the prototype's stock scenes — the
-   array it declares but never wires up, leaving the frame black.
-5. While the card is flipped, the deck lifts to keep the note field above the keyboard.
+4. **A card frame never shows stock artwork.** The prototype filled the cards behind the top one
+   with the roll's cover photo and declared a set of stand-in scenes; both are gone from the
+   viewfinder, so with no camera frame available a frame simply stays dark. Roll covers still
+   appear where they belong, on the format previews in the overview and the roll sheet.
+5. **The card back is gone.** Writing a note on the back of a print — the prototype's
+   tap-to-flip — was removed as broken on device, along with its flip hint on the card front, so
+   the card is shorter than the prototype's by that row. The history has it if it comes back.
 6. The finished-roll copy uses the roll's own frame count; the prototype hardcodes "5 moments".
 7. The sealed envelope is stamped `PRENT`. The prototype's markup stamps the brand there, while
    its `openRoll()` overwrites it with the product name — the brand reads as the intended

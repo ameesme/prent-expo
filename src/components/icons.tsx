@@ -55,17 +55,6 @@ export function Calendar({ size, color, opacity }: IconProps) {
   );
 }
 
-/** The two-arrow "flip" glyph used by the card's flip hint. */
-export function FlipHint({ size, color, opacity }: IconProps) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" opacity={opacity}>
-      <Path {...STROKE} stroke={color} strokeWidth={1.8} d="M3 7h13a4 4 0 0 1 0 8H8" />
-      <Path {...STROKE} stroke={color} strokeWidth={1.8} d="M6 4 3 7l3 3" />
-      <Path {...STROKE} stroke={color} strokeWidth={1.8} d="M18 20l3-3-3-3" />
-    </Svg>
-  );
-}
-
 export function Rolls({ size, color, opacity }: IconProps) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" opacity={opacity}>

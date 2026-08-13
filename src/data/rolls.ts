@@ -84,15 +84,6 @@ export const ROLLS: Roll[] = [
   },
 ];
 
-/** Stand-in viewfinder scenes for when the camera is unavailable or denied. */
-export const FALLBACK_SHOTS = [
-  'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=600&q=80',
-  'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=600&q=80',
-  'https://images.unsplash.com/photo-1492633423870-43d1cd2775eb?w=600&q=80',
-  'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=600&q=80',
-  'https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=600&q=80',
-];
-
 /** Sample "captured" frames used to fill a roll's shot slots. */
 const FRAME_POOL = [
   'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?w=200&q=70',

@@ -47,8 +47,6 @@ export function CaptureScreen() {
     text: SLOT_IDLE,
     star: false,
   });
-  const [flipped, setFlipped] = useState(false);
-  const [message, setMessage] = useState('');
   const [facing, setFacing] = useState<CameraType>('back');
   const [flashOn, setFlashOn] = useState(false);
   const [overviewOpen, setOverviewOpen] = useState(false);
@@ -67,12 +65,10 @@ export function CaptureScreen() {
   const envHeight = useSharedValue(m.env.idle);
   const busy = useSharedValue(0);
   const lastPhase = useSharedValue(0);
-  // Mirrors `flipped` for the gesture worklets, so their config never depends on state.
-  const flippedSV = useSharedValue(false);
-
-  useEffect(() => {
-    flippedSV.value = flipped;
-  }, [flipped, flippedSV]);
+  /** 0 → resting stack, 1 → each card has risen one place towards the front. */
+  const advance = useSharedValue(0);
+  /** 1 → the blurred still covers the frame, 0 → the live preview shows through. */
+  const focus = useSharedValue(1);
 
   const drag = useMemo(() => ({ x, y, rot, opacity }), [x, y, rot, opacity]);
   const total = roll.total;
@@ -132,13 +128,6 @@ export function CaptureScreen() {
     restCard(true);
   }, [applyPhase, restCard, lastPhase]);
 
-  const flipToBack = useCallback(() => {
-    lastPhase.value = 0;
-    applyPhase(0);
-    restCard(true);
-    setFlipped(true);
-  }, [applyPhase, restCard, lastPhase]);
-
   /** Take the real photo and hand it to the gallery, without blocking the animation. */
   const savePhoto = useCallback(async () => {
     if (!camera.current || !cameraPermission?.granted) return;
@@ -180,15 +169,16 @@ export function CaptureScreen() {
     }
   }, [busy]);
 
+  const pullFocus = useCallback(() => {
+    focus.value = withTiming(0, { duration: ANIM.focus, easing: Easing.out(Easing.ease) });
+  }, [focus]);
+
   const handleCameraReady = useCallback(() => {
+    // The frame comes into focus as the preview comes up.
+    pullFocus();
     // Let exposure settle before grabbing, so the still is not a black first frame.
     after(ANIM.seedDelay, () => void seedPreview());
-  }, [after, seedPreview]);
-
-  // A still from the old lens would be misleading after flipping the camera.
-  useEffect(() => {
-    setPreviewUri(null);
-  }, [facing]);
+  }, [after, pullFocus, seedPreview]);
 
   const finishRoll = useCallback(() => {
     setDeveloping(true);
@@ -208,6 +198,10 @@ export function CaptureScreen() {
       rot.value = withTiming(dx * RATIO.captureRotate, config);
       opacity.value = withTiming(0, config);
 
+      // The cards behind rise into place while the captured one leaves, so the deck no
+      // longer re-indexes under the user in a single frame.
+      advance.value = withTiming(1, config);
+
       flash.current?.fire(flashOn);
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       void savePhoto();
@@ -226,8 +220,12 @@ export function CaptureScreen() {
             busy.value = 0;
             return 0;
           }
+          // The risen card and the returning top card share a position, so the swap is
+          // invisible; the blurred still covers it and then pulls focus.
           restCard(false);
-          setMessage('');
+          advance.value = 0;
+          focus.value = 1;
+          pullFocus();
           setSlot({ text: SLOT_IDLE, star: false });
           busy.value = 0;
           return next;
@@ -235,15 +233,18 @@ export function CaptureScreen() {
       });
     },
     [
+      advance,
       after,
       applyPhase,
       busy,
       cardHeight,
       finishRoll,
       flashOn,
+      focus,
       lastPhase,
       m.deck.centerY,
       opacity,
+      pullFocus,
       restCard,
       rot,
       savePhoto,
@@ -257,82 +258,62 @@ export function CaptureScreen() {
   // reach their JS callbacks through a ref that is refreshed every render, and the enabled
   // state lives in a shared value instead of a prop — which keeps the identities below
   // stable and the `useMemo` deps down to the design scale.
-  const handlers = useRef({ applyPhase, capture, resetDrag, flipToBack, seedPreview });
-  handlers.current = { applyPhase, capture, resetDrag, flipToBack, seedPreview };
+  const handlers = useRef({ applyPhase, capture, resetDrag, seedPreview });
+  handlers.current = { applyPhase, capture, resetDrag, seedPreview };
 
   const onPhase = useCallback((next: number) => handlers.current.applyPhase(next), []);
   const onCapture = useCallback((dx: number) => handlers.current.capture(dx), []);
   const onReset = useCallback(() => handlers.current.resetDrag(), []);
-  const onFlip = useCallback(() => handlers.current.flipToBack(), []);
   const onTouch = useCallback(() => void handlers.current.seedPreview(), []);
 
   // Thresholds are design pixels in the prototype, so they scale with the canvas.
   const S = m.S;
-  const gesture = useMemo(() => {
-    // Failing on touch-down is how a *stable* gesture gets switched off: the touch then
-    // passes through to the note field and the flip-back control on the card's back.
-    // A live touch also refreshes the still on the cards underneath, so the frame the drag
-    // reveals is current. Both raced gestures report the touch; `seedPreview` throttles.
-    const guard = (manager: { fail: () => void }) => {
-      'worklet';
-      if (flippedSV.value || busy.value) {
-        manager.fail();
-        return;
-      }
-      runOnJS(onTouch)();
-    };
+  const gesture = useMemo(
+    () =>
+      // `minDistance` is the prototype's 5px slop, below which a touch is not a drag.
+      Gesture.Pan()
+        .minDistance(ANIM.moveSlop * S)
+        // Failing on touch-down is how a *stable* gesture gets switched off, and a live
+        // touch refreshes the still on the cards underneath so the frame a drag reveals is
+        // current. `seedPreview` throttles, since a touch can be reported more than once.
+        .onTouchesDown((_event, manager) => {
+          'worklet';
+          if (busy.value) {
+            manager.fail();
+            return;
+          }
+          runOnJS(onTouch)();
+        })
+        .onUpdate((event) => {
+          'worklet';
+          if (busy.value) return;
+          const dx = event.translationX;
+          const dy = event.translationY;
 
-    // `minDistance` is the prototype's 5px slop: below it the drag never starts, which
-    // is exactly when a touch should count as a tap instead.
-    const pan = Gesture.Pan()
-      .minDistance(ANIM.moveSlop * S)
-      .onTouchesDown((_event, manager) => {
-        'worklet';
-        guard(manager);
-      })
-      .onUpdate((event) => {
-        'worklet';
-        if (busy.value || flippedSV.value) return;
-        const dx = event.translationX;
-        const dy = event.translationY;
+          x.value = dx;
+          y.value = dy;
+          rot.value = dx * RATIO.dragRotate;
 
-        x.value = dx;
-        y.value = dy;
-        rot.value = dx * RATIO.dragRotate;
-
-        const next = dy < ANIM.capture * S ? 3 : dy < ANIM.near * S ? 2 : 1;
-        if (next !== lastPhase.value) {
-          lastPhase.value = next;
-          runOnJS(onPhase)(next);
-        }
-      })
-      .onEnd((event) => {
-        'worklet';
-        if (busy.value || flippedSV.value) return;
-        const flicked =
-          event.velocityY < ANIM.flickVelocity * 1000 * S &&
-          event.translationY < ANIM.flickDistance * S;
-        if (event.translationY < ANIM.capture * S || flicked) {
-          runOnJS(onCapture)(event.translationX);
-        } else {
-          runOnJS(onReset)();
-        }
-      });
-
-    // A tap flips the card to its back, as in the prototype's "no move" pointerup.
-    const tap = Gesture.Tap()
-      .maxDistance(ANIM.moveSlop * 2 * S)
-      .onTouchesDown((_event, manager) => {
-        'worklet';
-        guard(manager);
-      })
-      .onEnd((_event, success) => {
-        'worklet';
-        if (success && !busy.value && !flippedSV.value) runOnJS(onFlip)();
-      });
-
-    return Gesture.Race(pan, tap);
-  }, [S, busy, flippedSV, lastPhase, onCapture, onFlip, onPhase, onReset, onTouch, rot, x, y]);
+          const next = dy < ANIM.capture * S ? 3 : dy < ANIM.near * S ? 2 : 1;
+          if (next !== lastPhase.value) {
+            lastPhase.value = next;
+            runOnJS(onPhase)(next);
+          }
+        })
+        .onEnd((event) => {
+          'worklet';
+          if (busy.value) return;
+          const flicked =
+            event.velocityY < ANIM.flickVelocity * 1000 * S &&
+            event.translationY < ANIM.flickDistance * S;
+          if (event.translationY < ANIM.capture * S || flicked) {
+            runOnJS(onCapture)(event.translationX);
+          } else {
+            runOnJS(onReset)();
+          }
+        }),
+    [S, busy, lastPhase, onCapture, onPhase, onReset, onTouch, rot, x, y],
+  );
 
   const openRoll = useCallback(
     (next: Roll) => {
@@ -340,28 +321,26 @@ export function CaptureScreen() {
       setRemaining(next.total - next.shot);
       setDeveloping(false);
       setDone(false);
-      setFlipped(false);
       setInfoOpen(false);
-      setMessage('');
       lastPhase.value = 0;
       applyPhase(0);
       restCard(false);
+      advance.value = 0;
       busy.value = 0;
     },
-    [applyPhase, busy, lastPhase, restCard],
+    [advance, applyPhase, busy, lastPhase, restCard],
   );
 
   const loadNewRoll = useCallback(() => {
     setRemaining(total);
     setDeveloping(false);
     setDone(false);
-    setFlipped(false);
-    setMessage('');
     lastPhase.value = 0;
     applyPhase(0);
     restCard(false);
+    advance.value = 0;
     busy.value = 0;
-  }, [applyPhase, busy, lastPhase, restCard, total]);
+  }, [advance, applyPhase, busy, lastPhase, restCard, total]);
 
   const cameraEnabled = cameraPermission?.granted === true && !developing && !done;
   const controlsVisible = !developing && !done;
@@ -376,18 +355,15 @@ export function CaptureScreen() {
         remaining={remaining}
         total={total}
         drag={drag}
+        advance={advance}
+        focus={focus}
         gesture={gesture}
-        flipped={flipped}
-        message={message}
-        onChangeMessage={setMessage}
-        onFlipToFront={() => setFlipped(false)}
         cameraRef={camera}
         facing={facing}
         flashOn={flashOn}
         cameraEnabled={cameraEnabled}
         previewUri={previewUri}
         onCameraReady={handleCameraReady}
-        cardHeight={cardHeight}
         onCardHeight={setCardHeight}
       />
 
