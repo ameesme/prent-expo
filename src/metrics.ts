@@ -38,6 +38,11 @@ export const RATIO = {
   titleNear: 0.6,
   /** `--vf` fallback when a roll has no landscape ratio. */
   vfLandFallback: 16 / 9,
+  /**
+   * Blur on the still shown by the cards behind the top one, in points — density
+   * independent, so it is not scaled with the design canvas.
+   */
+  blurRadius: 12,
 } as const;
 
 /** Drag thresholds and animation timings, straight from the prototype's JS/CSS. */
@@ -52,8 +57,8 @@ export const ANIM = {
   envBg: 250, // background .25s
   flap: 300, // height .3s cubic-bezier(.2,.9,.25,1)
   flapOpacity: 250,
-  flip: 550, // .55s cubic-bezier(.3,.7,.25,1)
-  flipFocusDelay: 320,
+  /** The blurred still fading off the live frame, as the viewfinder pulls focus. */
+  focus: 320,
   reset: 350, // transform .35s cubic-bezier(.2,.9,.25,1)
   fling: 400, // transform .40s cubic-bezier(.4,0,.2,1)
   flapClose: 300,
@@ -154,32 +159,6 @@ const PORTRAIT = {
     mlineFont: 11.5,
     mlineIcon: 12,
     mitemGap: 6,
-    hintTop: 11,
-    hintPadTop: 10,
-    hintFont: 11,
-    hintSpacing: 0.3,
-    hintGap: 6,
-    hintIcon: 13,
-    backHeadFont: 11,
-    backHeadSpacing: 1,
-    backHeadBottom: 12,
-    qr: 30,
-    qrRadius: 4,
-    qrFont: 8,
-    qrSpacing: 1,
-    msgRadius: 14,
-    msgPadV: 8,
-    msgPadH: 4,
-    /** `background-position:0 8px` + the 33px transparent run. */
-    msgLineFirst: 41,
-    msgLineGap: 34,
-    msgMin: 130,
-    msgFont: 22,
-    msgLine: 34,
-    msgSpacing: 0.3,
-    footTop: 10,
-    footFont: 10,
-    footSpacing: 0.5,
   },
   controls: {
     /** `top:748` in an 820-tall screen, with the 52px buttons ending at 800. */
@@ -349,12 +328,6 @@ const LANDSCAPE_OVERRIDES = {
     rollFont: 13,
     mlineTop: 5,
     mlineFont: 10.5,
-    hintTop: 6,
-    hintPadTop: 6,
-    hintFont: 10,
-    msgMin: 80,
-    msgFont: 18,
-    msgLine: 27,
   },
   controls: {
     gap: 14,

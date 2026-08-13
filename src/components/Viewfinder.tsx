@@ -3,6 +3,7 @@ import { type RefObject, useEffect } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -10,8 +11,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { FALLBACK_SHOTS, type Roll } from '../data/rolls';
-import { ANIM, type Metrics } from '../metrics';
+import type { Roll } from '../data/rolls';
+import { ANIM, RATIO, type Metrics } from '../metrics';
 import { COLORS, FONTS } from '../theme';
 
 /** Corner brackets + centre reticle: the prototype's `.vf` overlay. */
@@ -170,8 +171,15 @@ function RecPill({ m, label }: { m: Metrics; label: string }) {
 }
 
 /**
- * The photo frame. Only the top card is a live viewfinder; the cards behind it show
- * the roll cover, exactly as in the prototype.
+ * The photo frame.
+ *
+ * Only the top card can be live — expo-camera builds one capture session per `CameraView`
+ * and iOS will not run two against the same lens — so the cards behind hold a blurred
+ * still of a real camera frame, like a lens that has not pulled focus yet. On the top card
+ * that same blurred still sits over the live preview and fades away as the camera comes up,
+ * which doubles as cover for the moment the deck re-indexes after a capture.
+ *
+ * A frame never falls back to stock artwork: with no camera frame yet it stays dark.
  */
 export function Viewfinder({
   m,
@@ -182,8 +190,8 @@ export function Viewfinder({
   flashOn,
   cameraEnabled,
   previewUri,
+  focus,
   onCameraReady,
-  fallbackIndex,
 }: {
   m: Metrics;
   roll: Roll;
@@ -193,16 +201,12 @@ export function Viewfinder({
   flashOn?: boolean;
   cameraEnabled?: boolean;
   previewUri?: string | null;
+  focus: SharedValue<number>;
   onCameraReady?: () => void;
-  fallbackIndex?: number;
 }) {
   const { d } = m;
 
-  // Only the top card can be live — iOS allows a single capture session — so the cards
-  // behind it show the most recent real camera frame, falling back to the roll cover.
-  const still = live
-    ? FALLBACK_SHOTS[(fallbackIndex ?? 0) % FALLBACK_SHOTS.length]
-    : (previewUri ?? roll.cover);
+  const focusStyle = useAnimatedStyle(() => ({ opacity: focus.value }));
 
   return (
     <View
@@ -227,9 +231,31 @@ export function Viewfinder({
           onCameraReady={onCameraReady}
           responsiveOrientationWhenOrientationLocked
         />
-      ) : (
-        <Image source={{ uri: still }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-      )}
+      ) : null}
+
+      {live ? (
+        // Fades out as the preview comes up. Dark when there is no frame to blur yet, so
+        // the reveal still reads as the viewfinder focusing rather than an image appearing.
+        <Animated.View style={[StyleSheet.absoluteFill, { zIndex: 1 }, focusStyle]}>
+          {previewUri ? (
+            <Image
+              source={{ uri: previewUri }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+              blurRadius={RATIO.blurRadius}
+            />
+          ) : (
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: COLORS.frame }]} />
+          )}
+        </Animated.View>
+      ) : previewUri ? (
+        <Image
+          source={{ uri: previewUri }}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
+          blurRadius={RATIO.blurRadius}
+        />
+      ) : null}
 
       {live ? (
         <>
